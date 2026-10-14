@@ -1,0 +1,151 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="clr-namespace:TouchPanel.ViewModels"
+                    xmlns:widgets="clr-namespace:TouchPanel.Widgets">
+
+    <!-- Keeps the shared touch styles resolvable when this dictionary is loaded on its own (tests).
+         The palette itself is merged at the application level, so app-level theme keys win. -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/TouchPanel;component/Theme/Styles.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!--
+        Sparkline widget template (T-07, RF-041/M2-RF-411..416): draws the view model's bounded
+        history on a display-only plotting surface. Gaps are preserved by the plot, an all-unavailable
+        window shows the explicit "Unavailable" text (never a fabricated zero), and a disabled widget
+        (unknown sensor key, RF-047) shows the persistent disabled badge with the reason as tooltip.
+        No code-behind and no animation; the plot redraws only when the bound points/scale change.
+        M3-RF-851: the surface/line bases are DynamicResource fallbacks on `Tag`, overrides layered.
+    -->
+    <DataTemplate x:Key="Widget.Sparkline" DataType="{x:Type vm:SparklineWidgetViewModel}">
+        <Grid ToolTip="{Binding DisabledReason}"
+              Opacity="{Binding Opacity, TargetNullValue=1.0}"
+              ToolTipService.ShowOnDisabled="True"
+              ToolTipService.InitialShowDelay="400"
+              ToolTipService.ShowDuration="8000">
+            <Border BorderBrush="{DynamicResource WidgetBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    SnapsToDevicePixels="True"
+                    Tag="{DynamicResource WidgetSurfaceBrush}">
+                <Border.Background>
+                    <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                        <Binding Path="BackgroundBrush" />
+                        <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                    </MultiBinding>
+                </Border.Background>
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left">
+                            <TextBlock x:Name="IconGlyph"
+                                       Text="{Binding IconGlyph}"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="{Binding FontSize, TargetNullValue=16}"
+                                       Margin="0,0,6,0"
+                                       VerticalAlignment="Center"
+                                       Visibility="{Binding HasIcon, Converter={StaticResource BoolVisibilityConverter}}" />
+                            <TextBlock Text="{Binding Label}"
+                                       Style="{StaticResource PanelTextStyle}"
+                                       Tag="{DynamicResource PanelForegroundBrush}"
+                                       FontSize="{Binding FontSize, TargetNullValue=16}"
+                                       FontWeight="SemiBold"
+                                       TextTrimming="CharacterEllipsis"
+                                       VerticalAlignment="Center">
+                                <TextBlock.Foreground>
+                                    <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                                        <Binding Path="ForegroundBrush" />
+                                        <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                                    </MultiBinding>
+                                </TextBlock.Foreground>
+                            </TextBlock>
+                        </StackPanel>
+
+                        <!-- User-requested addition: current-value readout (top-right), shown only
+                             when ShowValue is enabled; the value text is "Unavailable" when the
+                             newest sample is missing. -->
+                        <TextBlock x:Name="CurrentValueText"
+                                   Grid.Column="1"
+                                   Text="{Binding ValueText}"
+                                   Style="{StaticResource PanelTextStyle}"
+                                   Tag="{DynamicResource PanelForegroundBrush}"
+                                   FontSize="{Binding FontSize, TargetNullValue=16}"
+                                   FontWeight="SemiBold"
+                                   Margin="8,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Visibility="{Binding ShowValue, Converter={StaticResource BoolVisibilityConverter}}">
+                            <TextBlock.Foreground>
+                                <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                                    <Binding Path="ForegroundBrush" />
+                                    <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                                </MultiBinding>
+                            </TextBlock.Foreground>
+                        </TextBlock>
+                    </Grid>
+
+                    <Grid Grid.Row="1" Margin="0,6,0,0">
+                        <widgets:SparklinePlot x:Name="Plot"
+                                               Points="{Binding Points}"
+                                               ScaleMinimum="{Binding ScaleMinimum}"
+                                               ScaleMaximum="{Binding ScaleMaximum}"
+                                               IsFilled="{Binding IsFilled}"
+                                               IsHitTestVisible="False"
+                                               Tag="{DynamicResource PanelAccentBrush}">
+                            <widgets:SparklinePlot.FillBrush>
+                                <MultiBinding Converter="{StaticResource AppearanceAccentFillConverter}">
+                                    <Binding Path="AccentBrush" />
+                                    <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                                </MultiBinding>
+                            </widgets:SparklinePlot.FillBrush>
+                            <widgets:SparklinePlot.LineBrush>
+                                <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                                    <Binding Path="AccentBrush" />
+                                    <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                                </MultiBinding>
+                            </widgets:SparklinePlot.LineBrush>
+                        </widgets:SparklinePlot>
+
+                        <TextBlock x:Name="UnavailableText"
+                                   Text="{x:Static vm:SparklineWidgetViewModel.UnavailableText}"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource PanelDisabledForegroundBrush}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Visibility="Collapsed" />
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- RF-047/RF-079: always-visible disabled indicator; the tooltip keeps the reason. -->
+            <Border x:Name="DisabledBadge"
+                    Style="{StaticResource WidgetDisabledBadgeStyle}"
+                    ToolTip="{Binding DisabledReason}"
+                    Visibility="Collapsed">
+                <TextBlock Text="&#x2298;"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource PanelBackgroundBrush}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+            </Border>
+        </Grid>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding IsAvailable}" Value="False">
+                <Setter TargetName="UnavailableText" Property="Visibility" Value="Visible" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding ShowsDisabledIndicator}" Value="True">
+                <Setter TargetName="DisabledBadge" Property="Visibility" Value="Visible" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+</ResourceDictionary>

@@ -1,0 +1,57 @@
+# TouchPanel — repository ignore rules
+
+# Build output (any project / any nesting depth)
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+
+# Publish / self-contained / single-file output
+publish/
+Publish/
+publish-output/
+*.publish
+selfcontained/
+sc-output/
+artifacts/
+
+# Local verification / scratch folders
+.release-check/
+verify-release/
+verify/
+tmp/
+temp/
+*.tmp
+
+# Visual Studio / Rider / VS Code user state
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+# Build/test result artifacts
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# NuGet
+*.nupkg
+*.snupkg
+
+# Local agent tooling (not part of the product)
+.opencode/
+.agents/
+skills-lock.json
+
+# OS noise
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

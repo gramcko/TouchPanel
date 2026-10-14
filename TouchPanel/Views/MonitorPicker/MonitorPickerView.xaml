@@ -1,0 +1,124 @@
+<UserControl x:Class="TouchPanel.Views.MonitorPicker.MonitorPickerView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:config="clr-namespace:TouchPanel.Config">
+
+    <!--
+        Monitor picker (T-17, RF-093/M2-RF-931..934): lists every discovered monitor with its stable
+        identity fields, resolution, position, and primary flag; highlights the current target;
+        surfaces an unavailable target; offers the fallback policy; and writes a selection through
+        the settings apply pipeline without a restart. Touch-friendly: every affordance is at least
+        44 DIP.
+    -->
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/TouchPanel;component/Theme/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+            <Style x:Key="MonitorRowBorderStyle" TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="12,8" />
+                <Setter Property="Margin" Value="0,0,0,6" />
+            </Style>
+
+            <Style x:Key="BadgeStyle" TargetType="Border">
+                <Setter Property="Background" Value="{DynamicResource PanelAccentBrush}" />
+                <Setter Property="CornerRadius" Value="6" />
+                <Setter Property="Padding" Value="6,2" />
+                <Setter Property="Margin" Value="6,0,0,0" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+
+            <Style x:Key="BadgeTextStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelBackgroundBrush}" />
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <StackPanel>
+        <TextBlock x:Name="TargetStatusText"
+                   Text="{Binding TargetStatusText}"
+                   FontSize="13"
+                   TextWrapping="Wrap"
+                   Margin="0,0,0,6">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding HasUnavailableTarget}" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource WidgetErrorBrush}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+            <Button x:Name="RefreshButton"
+                    Content="Refresh"
+                    MinHeight="40"
+                    MinWidth="96"
+                    Padding="16,6"
+                    Margin="0,0,8,0"
+                    Command="{Binding RefreshCommand}" />
+            <Button x:Name="FallbackNoneButton"
+                    Content="Fallback: none"
+                    MinHeight="40"
+                    Padding="16,6"
+                    Margin="0,0,8,0"
+                    Command="{Binding SetFallbackCommand}"
+                    CommandParameter="{x:Static config:MonitorFallback.None}" />
+            <Button x:Name="FallbackPrimaryButton"
+                    Content="Fallback: primary"
+                    MinHeight="40"
+                    Padding="16,6"
+                    Command="{Binding SetFallbackCommand}"
+                    CommandParameter="{x:Static config:MonitorFallback.Primary}" />
+        </StackPanel>
+
+        <ItemsControl x:Name="MonitorItems" ItemsSource="{Binding Monitors}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Style="{StaticResource MonitorRowBorderStyle}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding DisplayName}" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                    <Border Style="{StaticResource BadgeStyle}" Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="Current" Style="{StaticResource BadgeTextStyle}" />
+                                    </Border>
+                                    <Border Style="{StaticResource BadgeStyle}" Visibility="{Binding IsPrimary, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="Primary" Style="{StaticResource BadgeTextStyle}" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="{Binding IdentitySummary}" FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <Button Grid.Column="1"
+                                    Content="Use"
+                                    MinHeight="44"
+                                    MinWidth="72"
+                                    Padding="16,8"
+                                    VerticalAlignment="Center"
+                                    Command="{Binding DataContext.SelectMonitorCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding}" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </StackPanel>
+</UserControl>

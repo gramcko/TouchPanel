@@ -1,0 +1,108 @@
+<UserControl x:Class="TouchPanel.Views.PageSwitcherView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False"
+             IsTabStop="False"
+             Stylus.IsPressAndHoldEnabled="False"
+             Stylus.IsFlicksEnabled="False">
+
+    <!--
+        In-panel page selector (T-16, RF-091/M2-RF-911/M2-RF-913): a touch-first tab strip that
+        switches the active page without activating the panel or changing the foreground. It is bound
+        to a PageSwitcherViewModel, collapses when only one page is configured, and is covered by the
+        edit overlay while editing so a switch can never discard an edit session. Every affordance is
+        at least 44 DIP and none depends on hover (RF-025); controls are non-focusable so normal
+        operation never requires keyboard focus.
+    -->
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <!-- Self-contained: resolves the theme brushes without App resources. -->
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/TouchPanel;component/Theme/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <BooleanToVisibilityConverter x:Key="PageSwitcherVisibilityConverter" />
+
+            <!-- Touch-first page tab (>= 44 DIP). The active page is highlighted with the accent
+                 border, visible without hover (RF-025). -->
+            <Style x:Key="PageTabButtonStyle" TargetType="ButtonBase">
+                <Setter Property="MinWidth" Value="48" />
+                <Setter Property="MinHeight" Value="44" />
+                <Setter Property="Margin" Value="2,0" />
+                <Setter Property="Padding" Value="14,6" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+                <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+                <Setter Property="BorderThickness" Value="2" />
+                <Setter Property="FontSize" Value="15" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ButtonBase">
+                            <Border x:Name="Surface"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="8"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Surface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                                    <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsActive}" Value="True">
+                        <Setter Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <Grid x:Name="SelectorRoot"
+          HorizontalAlignment="Center"
+          VerticalAlignment="Top"
+          Margin="0,8,0,0"
+          Visibility="{Binding CanSwitch, Converter={StaticResource PageSwitcherVisibilityConverter}, FallbackValue=Collapsed}">
+        <Border Background="#CC1E1E1E"
+                BorderBrush="{DynamicResource WidgetBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="12"
+                Padding="4"
+                Focusable="False">
+            <ItemsControl x:Name="PageItems"
+                          ItemsSource="{Binding Pages}"
+                          Focusable="False"
+                          IsTabStop="False">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Button x:Name="PageTabButton"
+                                Style="{StaticResource PageTabButtonStyle}"
+                                Content="{Binding DisplayName}"
+                                Tag="{Binding Id}"
+                                Command="{Binding DataContext.SelectPageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                CommandParameter="{Binding Id}" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </Border>
+    </Grid>
+</UserControl>

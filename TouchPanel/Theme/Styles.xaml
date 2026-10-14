@@ -1,0 +1,319 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="clr-namespace:TouchPanel.ViewModels">
+
+    <!--
+        M3-RF-851 live-theming resource refactor. The palette is no longer self-merged here; the active
+        theme dictionary is merged at the application level (App.xaml / ThemeManager) so a runtime swap
+        reaches realized elements. Every palette reference below is a DynamicResource so it re-resolves
+        on a swap. The shared `Tag` property carries the dynamic theme fallback for the dynamic-safe
+        per-widget override pattern (DD-M3-2): the element base is a DynamicResource, and the override
+        is layered through `AppearanceForegroundConverter` with the present override winning.
+    -->
+
+    <!-- T-14 appearance helpers (RF-043/M2-RF-435/M2-RF-436): icons show only when configured, and
+         a foreground/brush override is layered over the disabled-aware theme value. -->
+    <BooleanToVisibilityConverter x:Key="BoolVisibilityConverter" />
+    <vm:AppearanceForegroundConverter x:Key="AppearanceForegroundConverter" />
+    <vm:AppearanceAccentFillConverter x:Key="AppearanceAccentFillConverter" />
+
+    <!-- Base text style (plan DD-13). -->
+    <Style x:Key="PanelTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
+    </Style>
+
+    <!--
+        T-10 touch-first widget styles (RF-030/RF-031/RNF-009, DD-13): interactive templates default
+        to at least 40x40 DIP, press feedback is trigger-based and immediate (no animation), and no
+        primary affordance depends on hover. Disabled widgets keep their geometry and show the
+        disabled surface; action failures add the shared error badge from the widget templates.
+    -->
+
+    <!--
+        Absolutely positioned widget container (DD-6/RF-032): the Canvas panel applies this style to
+        every generated item container, projecting the widget view model's geometry in DIPs.
+    -->
+    <Style x:Key="WidgetContainerStyle" TargetType="ContentPresenter">
+        <Setter Property="Canvas.Left" Value="{Binding X}" />
+        <Setter Property="Canvas.Top" Value="{Binding Y}" />
+        <Setter Property="Width" Value="{Binding Width}" />
+        <Setter Property="Height" Value="{Binding Height}" />
+    </Style>
+
+    <!-- Shared visual base for the interactive Button/Toggle surfaces. -->
+    <Style x:Key="TouchButtonStyle" TargetType="Button">
+        <Setter Property="MinWidth" Value="40" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+        <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Padding" Value="8" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <!-- RF-025: widget interaction never depends on keyboard focus. -->
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Surface"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource WidgetBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter Margin="{TemplateBinding Padding}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}">
+                            <TextElement.Foreground>
+                                <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                                    <Binding Path="ForegroundBrush" />
+                                    <Binding Path="Foreground" RelativeSource="{RelativeSource TemplatedParent}" />
+                                </MultiBinding>
+                            </TextElement.Foreground>
+                        </ContentPresenter>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <!-- RF-030: immediate press feedback on touch and mouse. -->
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Surface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                            <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                        </Trigger>
+                        <!-- Declared last so a disabled widget never looks pressed or highlighted. -->
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Surface" Property="Background" Value="{DynamicResource WidgetDisabledBrush}" />
+                            <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource PanelDisabledForegroundBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        Toggle surface: same touch behavior as the button, plus a persistent on-state layer fed by
+        the view model's runtime IsOn (D-15). Press feedback dims the surface so it is visible in
+        both states without an animation or hover dependency.
+    -->
+    <Style x:Key="TouchToggleButtonStyle" TargetType="Button">
+        <Setter Property="MinWidth" Value="40" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+        <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Padding" Value="8" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Surface"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource WidgetBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            SnapsToDevicePixels="True">
+                        <!-- OnLayer is a background-only sibling; the label sits above it so the
+                             off-state opacity never hides the content (RF-033/RF-035). The accent
+                             override is layered over the dynamic theme accent (RF-043/M2-RF-436):
+                             the base is the Tag DynamicResource, the VM override wins when present. -->
+                        <Grid>
+                            <Border x:Name="OnLayer"
+                                    CornerRadius="6"
+                                    Opacity="0"
+                                    Tag="{DynamicResource PanelAccentBrush}">
+                                <Border.Background>
+                                    <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                                        <Binding Path="AccentBrush" />
+                                        <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                                    </MultiBinding>
+                                </Border.Background>
+                            </Border>
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}">
+                                <TextElement.Foreground>
+                                    <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                                        <Binding Path="ForegroundBrush" />
+                                        <Binding Path="Foreground" RelativeSource="{RelativeSource TemplatedParent}" />
+                                    </MultiBinding>
+                                </TextElement.Foreground>
+                            </ContentPresenter>
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Surface" Property="Opacity" Value="0.65" />
+                        </Trigger>
+                        <DataTrigger Binding="{Binding IsOn}" Value="True">
+                            <Setter TargetName="OnLayer" Property="Opacity" Value="1" />
+                        </DataTrigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Surface" Property="Background" Value="{DynamicResource WidgetDisabledBrush}" />
+                            <Setter TargetName="OnLayer" Property="Opacity" Value="0" />
+                            <Setter Property="Foreground" Value="{DynamicResource PanelDisabledForegroundBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Display-only label text (RF-033/RF-034). -->
+    <Style x:Key="TouchLabelTextStyle" TargetType="TextBlock" BasedOn="{StaticResource PanelTextStyle}">
+        <Setter Property="FontSize" Value="22" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!--
+        Shared transient failure badge (RF-036): overlaid by the widget templates when the view
+        model reports HasError; never hit-testable, so it cannot block interaction.
+    -->
+    <Style x:Key="WidgetErrorBadgeStyle" TargetType="Border">
+        <Setter Property="Width" Value="18" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="CornerRadius" Value="9" />
+        <Setter Property="Background" Value="{DynamicResource WidgetErrorBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Top" />
+        <Setter Property="Margin" Value="0,4,4,0" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+        <Setter Property="Panel.ZIndex" Value="1" />
+    </Style>
+
+    <!--
+        Persistent disabled-state badge (RF-047/RF-079): shown by the interactive widget templates
+        whenever the view model reports ShowDisabledIndicator, so a disabled widget is visible
+        without hover (which touchscreens lack, RF-025). Anchored in the bottom-right corner so it
+        never collides with the transient failure badge; never hit-testable, so it cannot block
+        interaction, and the tooltip keeps the full reason.
+    -->
+    <Style x:Key="WidgetDisabledBadgeStyle" TargetType="Border">
+        <Setter Property="Width" Value="18" />
+        <Setter Property="Height" Value="18" />
+        <Setter Property="CornerRadius" Value="9" />
+        <Setter Property="Background" Value="{DynamicResource PanelDisabledForegroundBrush}" />
+        <Setter Property="HorizontalAlignment" Value="Right" />
+        <Setter Property="VerticalAlignment" Value="Bottom" />
+        <Setter Property="Margin" Value="0,0,4,4" />
+        <Setter Property="IsHitTestVisible" Value="False" />
+        <Setter Property="Panel.ZIndex" Value="1" />
+    </Style>
+
+    <!--
+        T-06 Slider touch styles (RF-040/M2-RF-405). The interactive track and the handle are both
+        at least 40 DIP, press feedback is immediate (no animation), and no affordance depends on
+        hover (RF-025). Disabled sliders keep their geometry and show the disabled surface.
+    -->
+    <Style x:Key="TouchSliderTrackButtonStyle" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}"
+                            CornerRadius="6"
+                            SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- RF-040: the handle meets the 40 DIP touch-target default (D-9/RF-031). -->
+    <Style x:Key="TouchSliderThumbStyle" TargetType="Thumb">
+        <Setter Property="MinWidth" Value="40" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Grid>
+                        <Border BorderBrush="{DynamicResource WidgetBorderBrush}"
+                                BorderThickness="2"
+                                CornerRadius="20"
+                                SnapsToDevicePixels="True"
+                                Tag="{DynamicResource PanelAccentBrush}">
+                            <Border.Background>
+                                <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                                    <Binding Path="AccentBrush" />
+                                    <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                                </MultiBinding>
+                            </Border.Background>
+                        </Border>
+                        <Ellipse Width="6"
+                                 Height="6"
+                                 Fill="{DynamicResource PanelBackgroundBrush}"
+                                 HorizontalAlignment="Center"
+                                 VerticalAlignment="Center" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="TouchSliderStyle" TargetType="Slider">
+        <Setter Property="MinWidth" Value="40" />
+        <Setter Property="MinHeight" Value="40" />
+        <!-- RF-025: the slider never depends on keyboard focus. -->
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="IsSnapToTickEnabled" Value="True" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Border x:Name="TrackSurface"
+                            Background="{DynamicResource WidgetDisabledBrush}"
+                            BorderBrush="{DynamicResource WidgetBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            SnapsToDevicePixels="True">
+                        <!-- The Slider control sets PART_Track.Orientation from its Orientation. -->
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton x:Name="DecreaseButton"
+                                              Style="{StaticResource TouchSliderTrackButtonStyle}"
+                                              Tag="{DynamicResource PanelAccentBrush}"
+                                              Command="Slider.DecreaseLarge">
+                                    <RepeatButton.Background>
+                                        <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                                            <Binding Path="AccentBrush" />
+                                            <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                                        </MultiBinding>
+                                    </RepeatButton.Background>
+                                </RepeatButton>
+                            </Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb x:Name="SliderThumb" Style="{StaticResource TouchSliderThumbStyle}" />
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton x:Name="IncreaseButton"
+                                              Style="{StaticResource TouchSliderTrackButtonStyle}"
+                                              Background="Transparent"
+                                              Command="Slider.IncreaseLarge" />
+                            </Track.IncreaseRepeatButton>
+                        </Track>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="DecreaseButton" Property="Background" Value="{DynamicResource WidgetBorderBrush}" />
+                            <Setter TargetName="SliderThumb" Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

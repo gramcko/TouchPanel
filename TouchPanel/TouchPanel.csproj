@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TouchPanel</AssemblyName>
+    <RootNamespace>TouchPanel</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+
+    <!-- T-13/RF-088/D-22 (R-5): the publish gate runs a single-file, self-contained
+         win-x64 publish (see plan DD-12). By default native assets (WPF wpfgfx and
+         PresentationNative DLLs plus the Mono.Posix helper DLLs pulled in transitively by
+         LibreHardwareMonitorLib) are left next to the exe; bundling them via self-extract
+         keeps the publish output a single runnable file that extracts natives under the
+         user's TEMP\.net folder at startup. This property only affects single-file
+         publishing and is inert for build/test/solution builds. -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- DD-1: single logging approach (Serilog + rolling file sink); RNF-011. -->
+    <PackageReference Include="Serilog" Version="4.4.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+
+    <!-- T-11/RF-062: the approved hardware telemetry dependency, confined to the
+         Monitoring/LibreHardwareMonitorAdapter.cs adapter. 0.9.6 is the latest stable
+         release (0.9.7 exists only as prereleases). -->
+    <PackageReference Include="LibreHardwareMonitorLib" Version="0.9.6" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- T-05: unit tests exercise the pure callback/truncation logic of Interop.TrayIcon. -->
+    <InternalsVisibleTo Include="TouchPanel.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,175 @@
+<Window x:Class="TouchPanel.Views.Settings.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:monitorPicker="clr-namespace:TouchPanel.Views.MonitorPicker"
+        Title="TouchPanel Settings"
+        Width="600"
+        Height="760"
+        MinWidth="480"
+        MinHeight="520"
+        WindowStartupLocation="CenterScreen"
+        ShowActivated="True"
+        Background="{DynamicResource PanelBackgroundBrush}"
+        Foreground="{DynamicResource PanelForegroundBrush}"
+        TextOptions.TextFormattingMode="Display">
+
+    <!--
+        Tray-accessible settings window (T-17, RF-092/M2-RF-921). Unlike the panel, this is an
+        ordinary activating window because it is a deliberate user action (M2-RF-924); opening and
+        closing it never changes the panel's no-activate behavior. It edits alwaysOnTop,
+        start-with-Windows, the telemetry interval, import/export, diagnostics, and the target
+        monitor (through the embedded picker). Hotkey editing is intentionally absent (RF-061/M3).
+    -->
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/TouchPanel;component/Theme/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+            <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="16" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelAccentBrush}" />
+                <Setter Property="Margin" Value="0,12,0,6" />
+            </Style>
+
+            <Style x:Key="DiagnosticLabelStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Opacity" Value="0.75" />
+            </Style>
+
+            <Style x:Key="DiagnosticValueStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Margin" Value="0,0,0,6" />
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+
+                <!-- Panel behavior (M2-RF-921) -->
+                <TextBlock Text="Panel" Style="{StaticResource SectionHeaderStyle}" />
+                <CheckBox x:Name="AlwaysOnTopCheckBox"
+                          MinHeight="40"
+                          FontSize="14"
+                          Content="Always on top"
+                          IsChecked="{Binding AlwaysOnTop, Mode=OneWay}"
+                          Command="{Binding SetAlwaysOnTopCommand}"
+                          CommandParameter="{Binding IsChecked, RelativeSource={RelativeSource Self}}" />
+
+                <!-- Startup (M2-RF-921/M2-RF-923) -->
+                <TextBlock Text="Startup" Style="{StaticResource SectionHeaderStyle}" />
+                <CheckBox x:Name="StartWithWindowsCheckBox"
+                          MinHeight="40"
+                          FontSize="14"
+                          Content="Start TouchPanel with Windows"
+                          IsChecked="{Binding StartWithWindows, Mode=OneWay}"
+                          Command="{Binding SetStartWithWindowsCommand}"
+                          CommandParameter="{Binding IsChecked, RelativeSource={RelativeSource Self}}" />
+
+                <!-- Telemetry interval (M2-RF-921/M2-RF-922) -->
+                <TextBlock Text="Telemetry" Style="{StaticResource SectionHeaderStyle}" />
+                <TextBlock Text="Polling interval" FontSize="13" Margin="0,0,0,2" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Slider x:Name="PollIntervalSlider"
+                            Grid.Column="0"
+                            MinHeight="40"
+                            Minimum="{Binding MinimumPollIntervalSeconds}"
+                            Maximum="{Binding MaximumPollIntervalSeconds}"
+                            TickFrequency="0.5"
+                            IsSnapToTickEnabled="True"
+                            SmallChange="0.5"
+                            LargeChange="0.5"
+                            Value="{Binding PollIntervalSeconds, Mode=TwoWay}" />
+                    <TextBlock Grid.Column="1"
+                               VerticalAlignment="Center"
+                               MinWidth="56"
+                               TextAlignment="Right"
+                               FontSize="14"
+                               Text="{Binding PollIntervalSeconds, StringFormat={}{0:0.#} s}" />
+                </Grid>
+                <TextBlock x:Name="IntervalErrorText"
+                           Text="{Binding IntervalError}"
+                           Foreground="{DynamicResource WidgetErrorBrush}"
+                           FontSize="12"
+                           TextWrapping="Wrap"
+                           Margin="0,2,0,0"
+                           Visibility="{Binding HasIntervalError, Converter={StaticResource BoolToVisibilityConverter}}" />
+                <Button x:Name="ApplyIntervalButton"
+                        Content="Apply interval"
+                        MinHeight="40"
+                        Margin="0,6,0,0"
+                        HorizontalAlignment="Left"
+                        Padding="16,6"
+                        Command="{Binding ApplyIntervalCommand}" />
+
+                <!-- Target monitor (RF-093 / M2-RF-931..934) -->
+                <TextBlock Text="Target monitor" Style="{StaticResource SectionHeaderStyle}" />
+                <monitorPicker:MonitorPickerView x:Name="MonitorPicker" />
+
+                <!-- Import / export (M2-RF-921/M2-RF-835) -->
+                <TextBlock Text="Configuration" Style="{StaticResource SectionHeaderStyle}" />
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="ImportButton"
+                            Content="Import…"
+                            MinHeight="40"
+                            MinWidth="96"
+                            Padding="16,6"
+                            Margin="0,0,8,0"
+                            IsEnabled="{Binding CanImportExport}"
+                            Command="{Binding ImportCommand}" />
+                    <Button x:Name="ExportButton"
+                            Content="Export…"
+                            MinHeight="40"
+                            MinWidth="96"
+                            Padding="16,6"
+                            IsEnabled="{Binding CanImportExport}"
+                            Command="{Binding ExportCommand}" />
+                </StackPanel>
+
+                <!-- Read-only diagnostics (M2-RF-921) -->
+                <TextBlock Text="Configuration file" Style="{StaticResource DiagnosticLabelStyle}" Margin="0,12,0,0" />
+                <TextBlock x:Name="ConfigPathText" Text="{Binding ConfigPath}" Style="{StaticResource DiagnosticValueStyle}" />
+                <TextBlock Text="Schema version" Style="{StaticResource DiagnosticLabelStyle}" />
+                <TextBlock x:Name="SchemaVersionText" Text="{Binding SchemaVersionText}" Style="{StaticResource DiagnosticValueStyle}" />
+                <TextBlock Text="Current target identity" Style="{StaticResource DiagnosticLabelStyle}" />
+                <TextBlock x:Name="CurrentMonitorText" Text="{Binding CurrentMonitorText}" Style="{StaticResource DiagnosticValueStyle}" />
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <TextBlock x:Name="StatusText"
+                   Grid.Row="1"
+                   Text="{Binding StatusMessage}"
+                   FontSize="13"
+                   TextWrapping="Wrap"
+                   Margin="0,12,0,0"
+                   Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+        <Button x:Name="CloseButton"
+                Grid.Row="2"
+                Content="Close"
+                MinHeight="44"
+                MinWidth="120"
+                Padding="20,8"
+                Margin="0,16,0,0"
+                HorizontalAlignment="Right"
+                IsCancel="True"
+                Click="OnCloseClick" />
+    </Grid>
+</Window>

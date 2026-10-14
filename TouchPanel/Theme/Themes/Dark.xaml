@@ -1,0 +1,19 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!--
+        M3-RF-842 built-in theme: `dark` (default). This is the current Core-Release palette and
+        reproduces it exactly, so applying the default is a no-op. The dark palette values live once
+        in `Theme/Colors.xaml` (retained as the authoritative dark source) and are merged here; this
+        dictionary only adds the stable theme id marker consumed by `ThemeManager` so a swapped
+        application-level theme dictionary can be identified without duplicate palette values.
+        The marker is metadata only: templates never reference it.
+    -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/TouchPanel;component/Theme/Colors.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <sys:String x:Key="ThemeId">dark</sys:String>
+
+</ResourceDictionary>

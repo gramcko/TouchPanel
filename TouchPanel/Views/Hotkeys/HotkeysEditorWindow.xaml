@@ -1,0 +1,283 @@
+<Window x:Class="TouchPanel.Views.Hotkeys.HotkeysEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TouchPanel Hotkeys"
+        Width="640"
+        Height="760"
+        MinWidth="520"
+        MinHeight="560"
+        WindowStartupLocation="CenterScreen"
+        ShowActivated="True"
+        Background="{DynamicResource PanelBackgroundBrush}"
+        Foreground="{DynamicResource PanelForegroundBrush}"
+        TextOptions.TextFormattingMode="Display">
+
+    <!--
+        Tray-accessible, touch-first hotkey editor (RF-061/M3-RF-611..619). It is an ordinary
+        activating window because it is a deliberate user action (the D-6 analogue, M3-RF-616); it
+        is deliberately separate from the frozen SettingsWindow (RF-092). Editing, saving, and
+        re-applying hotkeys never activate the panel and never change its no-activate behavior.
+    -->
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/TouchPanel;component/Theme/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <BooleanToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+
+            <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="16" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelAccentBrush}" />
+                <Setter Property="Margin" Value="0,10,0,6" />
+            </Style>
+
+            <Style x:Key="ErrorTextStyle" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{DynamicResource WidgetErrorBrush}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+
+            <Style x:Key="StatusTextStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+                <Setter Property="Margin" Value="0,8,0,0" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                        <Setter Property="Foreground" Value="{DynamicResource WidgetErrorBrush}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Service-unavailable note (M3-RF-611) -->
+        <Border Grid.Row="0"
+                x:Name="UnavailableNote"
+                Padding="10,8"
+                Margin="0,0,0,8"
+                CornerRadius="4"
+                Background="{DynamicResource WidgetDisabledBrush}"
+                Visibility="{Binding HasUnavailableNote, Converter={StaticResource BoolToVisibilityConverter}}">
+            <TextBlock x:Name="UnavailableNoteText"
+                       Text="{Binding UnavailableNote}"
+                       TextWrapping="Wrap"
+                       FontSize="13" />
+        </Border>
+
+        <!-- Hotkey list (M3-RF-611) -->
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="Global hotkeys" Style="{StaticResource SectionHeaderStyle}" />
+
+            <ListView x:Name="HotkeyList"
+                      Grid.Row="1"
+                      MinHeight="160"
+                      ItemsSource="{Binding Entries}"
+                      SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Margin="0,4">
+                            <TextBlock Text="{Binding Combination}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding ActionSummary}" FontSize="12" Opacity="0.8" TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Error}"
+                                       Style="{StaticResource ErrorTextStyle}"
+                                       Visibility="{Binding HasError, Converter={StaticResource BoolToVisibilityConverter}}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+
+        <!-- Draft editor (M3-RF-612) -->
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="360">
+            <StackPanel>
+                <TextBlock Text="Combination" Style="{StaticResource SectionHeaderStyle}" />
+
+                <StackPanel Orientation="Horizontal">
+                    <CheckBox x:Name="ModifierCtrlCheckBox" MinHeight="40" MinWidth="88" FontSize="14"
+                              Content="Ctrl" IsChecked="{Binding ModifierCtrl, Mode=TwoWay}" />
+                    <CheckBox x:Name="ModifierAltCheckBox" MinHeight="40" MinWidth="88" FontSize="14"
+                              Content="Alt" IsChecked="{Binding ModifierAlt, Mode=TwoWay}" />
+                    <CheckBox x:Name="ModifierShiftCheckBox" MinHeight="40" MinWidth="88" FontSize="14"
+                              Content="Shift" IsChecked="{Binding ModifierShift, Mode=TwoWay}" />
+                    <CheckBox x:Name="ModifierWinCheckBox" MinHeight="40" MinWidth="88" FontSize="14"
+                              Content="Win" IsChecked="{Binding ModifierWin, Mode=TwoWay}" />
+                </StackPanel>
+
+                <TextBlock Text="Key" FontSize="13" Margin="0,6,0,2" />
+                <ComboBox x:Name="KeySelector"
+                          MinHeight="40"
+                          FontSize="14"
+                          ItemsSource="{Binding KeyOptions}"
+                          SelectedItem="{Binding SelectedKey, Mode=TwoWay}" />
+
+                <TextBlock Text="Action" Style="{StaticResource SectionHeaderStyle}" />
+                <ComboBox x:Name="ActionTypeSelector"
+                          MinHeight="40"
+                          FontSize="14"
+                          ItemsSource="{Binding ActionEditor.ActionTypeOptions}"
+                          DisplayMemberPath="DisplayName"
+                          SelectedItem="{Binding ActionEditor.SelectedActionOption, Mode=TwoWay}" />
+
+                <TextBlock Text="{Binding ActionEditor.ValidationError}"
+                           Style="{StaticResource ErrorTextStyle}"
+                           Margin="0,4,0,0"
+                           Visibility="{Binding ActionEditor.HasValidationError, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                <!-- Run command parameters -->
+                <StackPanel Visibility="{Binding ActionEditor.CanEditRunCommand, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="Executable path" FontSize="13" Margin="0,6,0,2" />
+                    <TextBox x:Name="ActionPathText" MinHeight="40" FontSize="14" Text="{Binding ActionEditor.PathText, Mode=TwoWay}" />
+                    <TextBlock Text="Arguments (one per line)" FontSize="13" Margin="0,6,0,2" />
+                    <TextBox MinHeight="40" FontSize="14" AcceptsReturn="True" TextWrapping="Wrap"
+                             Text="{Binding ActionEditor.ArgumentsText, Mode=TwoWay}" />
+                    <TextBlock Text="Working directory (optional)" FontSize="13" Margin="0,6,0,2" />
+                    <TextBox MinHeight="40" FontSize="14" Text="{Binding ActionEditor.WorkingDirectoryText, Mode=TwoWay}" />
+                </StackPanel>
+
+                <!-- Send keys parameters -->
+                <StackPanel Visibility="{Binding ActionEditor.CanEditSendKeys, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="Key to send" FontSize="13" Margin="0,6,0,2" />
+                    <TextBox x:Name="ActionKeyText" MinHeight="40" FontSize="14" Text="{Binding ActionEditor.KeyText, Mode=TwoWay}" />
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox MinHeight="40" MinWidth="88" FontSize="14" Content="Ctrl" IsChecked="{Binding ActionEditor.ModifierCtrl, Mode=TwoWay}" />
+                        <CheckBox MinHeight="40" MinWidth="88" FontSize="14" Content="Alt" IsChecked="{Binding ActionEditor.ModifierAlt, Mode=TwoWay}" />
+                        <CheckBox MinHeight="40" MinWidth="88" FontSize="14" Content="Shift" IsChecked="{Binding ActionEditor.ModifierShift, Mode=TwoWay}" />
+                        <CheckBox MinHeight="40" MinWidth="88" FontSize="14" Content="Win" IsChecked="{Binding ActionEditor.ModifierWin, Mode=TwoWay}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Media key parameters -->
+                <StackPanel Visibility="{Binding ActionEditor.CanEditMediaKey, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="Media key" FontSize="13" Margin="0,6,0,2" />
+                    <ComboBox MinHeight="40" FontSize="14"
+                              ItemsSource="{Binding ActionEditor.MediaKeyOptions}"
+                              SelectedItem="{Binding ActionEditor.SelectedMediaKey, Mode=TwoWay}" />
+                </StackPanel>
+
+                <!-- Volume parameters -->
+                <StackPanel Visibility="{Binding ActionEditor.CanEditVolume, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <TextBlock Text="Mode" FontSize="13" Margin="0,6,0,2" />
+                    <ComboBox MinHeight="40" FontSize="14"
+                              ItemsSource="{Binding ActionEditor.VolumeModeOptions}"
+                              SelectedItem="{Binding ActionEditor.SelectedVolumeMode, Mode=TwoWay}" />
+                    <TextBlock Text="Level (0-100)" FontSize="13" Margin="0,6,0,2"
+                               Visibility="{Binding ActionEditor.IsVolumeSetMode, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <TextBox MinHeight="40" FontSize="14"
+                             Visibility="{Binding ActionEditor.IsVolumeSetMode, Converter={StaticResource BoolToVisibilityConverter}}"
+                             Text="{Binding ActionEditor.LevelText, Mode=TwoWay}" />
+                    <TextBlock Text="Direction" FontSize="13" Margin="0,6,0,2"
+                               Visibility="{Binding ActionEditor.IsVolumeStepMode, Converter={StaticResource BoolToVisibilityConverter}}" />
+                    <ComboBox MinHeight="40" FontSize="14"
+                              Visibility="{Binding ActionEditor.IsVolumeStepMode, Converter={StaticResource BoolToVisibilityConverter}}"
+                              ItemsSource="{Binding ActionEditor.VolumeDirectionOptions}"
+                              SelectedItem="{Binding ActionEditor.SelectedVolumeDirection, Mode=TwoWay}" />
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <Button x:Name="NewButton" Content="New" MinHeight="40" MinWidth="96" Padding="16,6" Margin="0,0,8,0"
+                            Command="{Binding NewCommand}" />
+                    <Button x:Name="SaveEntryButton" Content="Add / Update entry" MinHeight="40" MinWidth="160" Padding="16,6" Margin="0,0,8,0"
+                            Command="{Binding SaveEntryCommand}" />
+                    <Button x:Name="RemoveButton" Content="Remove selected" MinHeight="40" MinWidth="150" Padding="16,6"
+                            Command="{Binding RemoveCommand}" />
+                </StackPanel>
+
+                <!-- Appearance section (M3-RF-850): theme / accent / icon pack, applied live through
+                     the same single-writer settings path. Hidden when the editor was built without it
+                     (for example the window wiring tests). -->
+                <StackPanel x:Name="AppearanceSection"
+                            Visibility="{Binding HasAppearance, Converter={StaticResource BoolToVisibilityConverter}}">
+                    <Separator Margin="0,16,0,4" />
+                    <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" />
+
+                    <TextBlock Text="Theme" FontSize="13" Margin="0,6,0,2" />
+                    <ComboBox x:Name="ThemeSelector" MinHeight="40" FontSize="14"
+                              ItemsSource="{Binding Appearance.ThemeOptions}"
+                              SelectedItem="{Binding Appearance.SelectedTheme, Mode=TwoWay}" />
+
+                    <TextBlock Text="Icon pack" FontSize="13" Margin="0,6,0,2" />
+                    <ComboBox x:Name="IconPackSelector" MinHeight="40" FontSize="14"
+                              ItemsSource="{Binding Appearance.IconPackOptions}"
+                              SelectedItem="{Binding Appearance.SelectedIconPack, Mode=TwoWay}" />
+
+                    <TextBlock Text="Accent color (#RRGGBB or #AARRGGBB; blank = theme accent)"
+                               FontSize="13" Margin="0,6,0,2" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBox x:Name="AccentTextBox" MinHeight="40" Width="170" FontSize="14"
+                                 Text="{Binding Appearance.AccentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button x:Name="SetAccentButton" Content="Set accent" MinHeight="40" MinWidth="110" Padding="12,6" Margin="8,0,8,0"
+                                Command="{Binding Appearance.SetAccentCommand}" />
+                        <Button x:Name="ClearAccentButton" Content="Use theme accent" MinHeight="40" MinWidth="150" Padding="12,6"
+                                Command="{Binding Appearance.ClearAccentCommand}" />
+                    </StackPanel>
+
+                    <TextBlock x:Name="AccentErrorText"
+                               Style="{StaticResource ErrorTextStyle}"
+                               Margin="0,4,0,0"
+                               Text="{Binding Appearance.AccentError}"
+                               Visibility="{Binding Appearance.HasAccentError, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                    <TextBlock x:Name="AppearanceStatusText"
+                               Text="{Binding Appearance.StatusMessage}"
+                               Visibility="{Binding Appearance.HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontSize" Value="13" />
+                                <Setter Property="TextWrapping" Value="Wrap" />
+                                <Setter Property="Margin" Value="0,8,0,0" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Appearance.StatusIsError}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource WidgetErrorBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+
+        <TextBlock x:Name="ValidationText"
+                   Grid.Row="3"
+                   Style="{StaticResource ErrorTextStyle}"
+                   Text="{Binding ValidationError}"
+                   Visibility="{Binding HasValidationError, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+        <Grid Grid.Row="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <TextBlock x:Name="StatusText"
+                       Grid.Row="0"
+                       Style="{StaticResource StatusTextStyle}"
+                       Text="{Binding StatusMessage}"
+                       Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+                <Button x:Name="ApplyButton" Content="Apply hotkeys" MinHeight="44" MinWidth="150" Padding="20,8" Margin="0,0,8,0"
+                        Command="{Binding ApplyCommand}" />
+                <Button x:Name="CloseButton" Content="Close" MinHeight="44" MinWidth="120" Padding="20,8"
+                        IsCancel="True" Click="OnCloseClick" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

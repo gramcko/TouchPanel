@@ -1,0 +1,83 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:vm="clr-namespace:TouchPanel.ViewModels">
+
+    <!-- Keeps the shared touch styles resolvable when this dictionary is loaded on its own (tests).
+         The palette itself is merged at the application level, so app-level theme keys win. -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="/TouchPanel;component/Theme/Styles.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!--
+        Button widget template (T-10, DD-6). One completed tap (WPF fires Click on release inside
+        the control) invokes the view model's ActivateCommand, which executes the bound action
+        exactly once (RF-035) and raises the transient error badge on failure (RF-036). There is
+        no code-behind. M3-RF-851: the surface base is a DynamicResource fallback carried on `Tag`
+        and the per-widget override is layered through the shared converter so it still wins.
+    -->
+    <DataTemplate x:Key="Widget.Button" DataType="{x:Type vm:ButtonWidgetViewModel}">
+        <Grid ToolTip="{Binding DisabledReason}"
+              Opacity="{Binding Opacity, TargetNullValue=1.0}"
+              ToolTipService.ShowOnDisabled="True"
+              ToolTipService.InitialShowDelay="400"
+              ToolTipService.ShowDuration="8000">
+            <Button Style="{StaticResource TouchButtonStyle}"
+                    Tag="{DynamicResource WidgetSurfaceBrush}"
+                    Command="{Binding ActivateCommand}"
+                    IsEnabled="{Binding IsEnabled}">
+                <Button.Background>
+                    <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
+                        <Binding Path="BackgroundBrush" />
+                        <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
+                    </MultiBinding>
+                </Button.Background>
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                    <TextBlock x:Name="IconGlyph"
+                               Text="{Binding IconGlyph}"
+                               FontFamily="Segoe MDL2 Assets"
+                               FontSize="{Binding FontSize, TargetNullValue=20}"
+                               Margin="0,0,6,0"
+                               VerticalAlignment="Center"
+                               Visibility="{Binding HasIcon, Converter={StaticResource BoolVisibilityConverter}}" />
+                    <TextBlock x:Name="ButtonLabel"
+                               Text="{Binding Label}"
+                               FontSize="{Binding FontSize, TargetNullValue=20}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+            <Border x:Name="ErrorBadge"
+                    Style="{StaticResource WidgetErrorBadgeStyle}"
+                    Visibility="Collapsed">
+                <TextBlock Text="!"
+                           FontSize="12"
+                           FontWeight="Bold"
+                           Foreground="White"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+            </Border>
+            <!-- RF-047/RF-079: always-visible disabled indicator; the tooltip keeps the reason. -->
+            <Border x:Name="DisabledBadge"
+                    Style="{StaticResource WidgetDisabledBadgeStyle}"
+                    ToolTip="{Binding DisabledReason}"
+                    Visibility="Collapsed">
+                <TextBlock Text="&#x2298;"
+                           FontSize="11"
+                           FontWeight="Bold"
+                           Foreground="{DynamicResource PanelBackgroundBrush}"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center" />
+            </Border>
+        </Grid>
+        <DataTemplate.Triggers>
+            <DataTrigger Binding="{Binding HasError}" Value="True">
+                <Setter TargetName="ErrorBadge" Property="Visibility" Value="Visible" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding ShowsDisabledIndicator}" Value="True">
+                <Setter TargetName="DisabledBadge" Property="Visibility" Value="Visible" />
+            </DataTrigger>
+        </DataTemplate.Triggers>
+    </DataTemplate>
+
+</ResourceDictionary>

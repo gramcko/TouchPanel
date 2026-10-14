@@ -1,0 +1,36 @@
+<UserControl x:Class="TouchPanel.Views.WidgetPageHost"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:widgets="clr-namespace:TouchPanel.Widgets"
+             Focusable="False"
+             IsTabStop="False"
+             Stylus.IsPressAndHoldEnabled="False"
+             Stylus.IsFlicksEnabled="False">
+
+    <!--
+        Config-driven widget host (T-10, RF-032/DD-6): an ItemsControl with a Canvas panel renders
+        the PageViewModel's widgets as absolutely positioned containers (DIPs). The container style
+        binds Canvas.Left/Top/Width/Height from each widget view model and the template selector
+        maps the view model's template key to its per-type DataTemplate; this host contains no
+        per-widget-instance logic.
+    -->
+
+    <UserControl.Resources>
+        <widgets:WidgetTemplateSelector x:Key="WidgetTemplateSelector" />
+    </UserControl.Resources>
+
+    <ItemsControl ItemsSource="{Binding Widgets}"
+                  ItemTemplateSelector="{StaticResource WidgetTemplateSelector}"
+                  ItemContainerStyle="{DynamicResource WidgetContainerStyle}"
+                  Focusable="False"
+                  IsTabStop="False"
+                  PreviewMouseLeftButtonDown="OnWidgetPreviewMouseLeftButtonDown"
+                  PreviewMouseLeftButtonUp="OnWidgetPreviewMouseLeftButtonUp">
+        <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+                <Canvas Background="Transparent" />
+            </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+    </ItemsControl>
+
+</UserControl>

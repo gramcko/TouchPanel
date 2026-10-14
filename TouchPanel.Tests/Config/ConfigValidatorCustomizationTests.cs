@@ -1,0 +1,347 @@
+using TouchPanel.Config;
+using TouchPanel.Config.Validation;
+using TouchPanel.Monitoring;
+
+namespace TouchPanel.Tests.Config;
+
+/// <summary>
+/// Two-tier validation for the M3 widget types (RF-046/M3-RF-469): Clock mode/format normalization,
+/// Bar range/sensor handling, and ImageButton disabled-when-invalid-action — all entry-level
+/// (never dropping the widget).
+/// </summary>
+public sealed class ConfigValidatorCustomizationTests
+{
+    [Fact]
+    public void Clock_UnknownMode_FallsBackToTime24WithAWarning()
+    {
+        var clock = new ClockWidgetConfig { Id = "c", Width = 200, Height = 100, Mode = ClockMode.Unknown };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(clock));
+
+        Assert.Equal(ClockMode.Time24, clock.Mode);
+        Assert.True(clock.IsEnabled);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.clock.mode");
+    }
+
+    [Fact]
+    public void Clock_ValidCustomFormat_IsPreserved()
+    {
+        var clock = new ClockWidgetConfig { Id = "c", Width = 200, Height = 100, Format = "HH:mm:ss" };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(clock));
+
+        Assert.Equal("HH:mm:ss", clock.Format);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.clock.format");
+    }
+
+    [Theory]
+    [InlineData("%")]
+    [InlineData("HH\\")]
+    public void Clock_InvalidCustomFormat_IsIgnoredWithAWarning(string format)
+    {
+        var clock = new ClockWidgetConfig { Id = "c", Width = 200, Height = 100, Format = format };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(clock));
+
+        Assert.Null(clock.Format);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.clock.format");
+    }
+
+    [Fact]
+    public void Clock_OverLengthCustomFormat_IsIgnoredWithAWarning()
+    {
+        var clock = new ClockWidgetConfig
+        {
+            Id = "c",
+            Width = 200,
+            Height = 100,
+            Format = new string('H', ClockWidgetConfig.MaxFormatLength + 1),
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(clock));
+
+        Assert.Null(clock.Format);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.clock.format");
+    }
+
+    [Fact]
+    public void Clock_DisplayOnly_StaysEnabledWithoutAnAction()
+    {
+        var clock = new ClockWidgetConfig { Id = "c", Width = 200, Height = 100 };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(clock));
+
+        Assert.True(clock.IsEnabled);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.action.missing");
+    }
+
+    [Fact]
+    public void Bar_InvalidRange_IsResetToDefaultsWithAWarning()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = SensorKeys.CpuTotal,
+            Minimum = 100,
+            Maximum = 10,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.Equal(BarWidgetConfig.DefaultMinimum, bar.Minimum);
+        Assert.Equal(BarWidgetConfig.DefaultMaximum, bar.Maximum);
+        Assert.True(bar.IsEnabled);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.bar.range");
+    }
+
+    [Fact]
+    public void Bar_UnknownSensor_IsDisabledWithAReason()
+    {
+        var bar = new BarWidgetConfig { Id = "bar", Width = 240, Height = 64, Sensor = "not.a.sensor" };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.False(bar.IsEnabled);
+        Assert.NotNull(bar.DisabledReason);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.bar.sensor");
+    }
+
+    [Fact]
+    public void Bar_EmptySensor_IsDisabled()
+    {
+        var bar = new BarWidgetConfig { Id = "bar", Width = 240, Height = 64, Sensor = "   " };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.False(bar.IsEnabled);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.bar.sensor");
+    }
+
+    [Fact]
+    public void Bar_ValidConfig_StaysEnabledWithoutWarnings()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = SensorKeys.CpuTotal,
+            Minimum = 0,
+            Maximum = 100,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.True(bar.IsEnabled);
+        Assert.DoesNotContain(
+            diagnostics,
+            diagnostic => diagnostic.Severity is ConfigDiagnosticSeverity.Warning or ConfigDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void Image_WithoutPath_IsDisabledWithAReason()
+    {
+        var image = new ImageWidgetConfig { Id = "img", Width = 240, Height = 160, Path = "   " };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(image));
+
+        Assert.False(image.IsEnabled);
+        Assert.NotNull(image.DisabledReason);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.image.path");
+    }
+
+    [Fact]
+    public void Image_RelativePath_IsDisabled()
+    {
+        var image = new ImageWidgetConfig { Id = "img", Width = 240, Height = 160, Path = @"Pictures\logo.png" };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(image));
+
+        Assert.False(image.IsEnabled);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.image.path");
+    }
+
+    [Fact]
+    public void Image_AbsolutePath_StaysEnabledWithoutWarnings()
+    {
+        var image = new ImageWidgetConfig
+        {
+            Id = "img",
+            Width = 240,
+            Height = 160,
+            Path = @"C:\Pictures\logo.png",
+            Stretch = ImageStretchMode.Fill,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(image));
+
+        Assert.True(image.IsEnabled);
+        Assert.Equal(ImageStretchMode.Fill, image.Stretch);
+        Assert.DoesNotContain(
+            diagnostics,
+            diagnostic => diagnostic.Severity is ConfigDiagnosticSeverity.Warning or ConfigDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void Image_UnknownStretch_FallsBackToUniformWithAWarning()
+    {
+        var image = new ImageWidgetConfig
+        {
+            Id = "img",
+            Width = 240,
+            Height = 160,
+            Path = @"C:\Pictures\logo.png",
+            Stretch = ImageStretchMode.Unknown,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(image));
+
+        Assert.Equal(ImageStretchMode.Uniform, image.Stretch);
+        Assert.True(image.IsEnabled);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.image.stretch");
+    }
+
+    [Fact]
+    public void ImageButton_WithoutAction_IsDisabledButKept()
+    {
+        var imageButton = new ImageButtonWidgetConfig { Id = "ib", Width = 120, Height = 120 };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(imageButton));
+
+        Assert.False(imageButton.IsEnabled);
+        Assert.NotNull(imageButton.DisabledReason);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.action.missing");
+    }
+
+    [Fact]
+    public void ImageButton_WithValidAction_StaysEnabled()
+    {
+        var imageButton = new ImageButtonWidgetConfig
+        {
+            Id = "ib",
+            Width = 120,
+            Height = 120,
+            Action = new MuteActionConfig(),
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(imageButton));
+
+        Assert.True(imageButton.IsEnabled);
+        Assert.DoesNotContain(
+            diagnostics,
+            diagnostic => diagnostic.Severity is ConfigDiagnosticSeverity.Warning or ConfigDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void ImageButton_WithUnknownAction_IsDisabled()
+    {
+        var imageButton = new ImageButtonWidgetConfig
+        {
+            Id = "ib",
+            Width = 120,
+            Height = 120,
+            Action = new UnknownActionConfig(
+                "http",
+                System.Text.Json.JsonDocument.Parse("""{ "type": "http", "url": "https://example.test" }""").RootElement.Clone()),
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(imageButton));
+
+        Assert.False(imageButton.IsEnabled);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.action.unknown");
+    }
+
+    // ---- User-requested addition: byte/rate display unit (entry-level containment) ----
+
+    [Fact]
+    public void Gauge_UnknownDisplayUnit_FallsBackToAutoWithAWarning()
+    {
+        var gauge = new GaugeWidgetConfig
+        {
+            Id = "g",
+            Width = 200,
+            Height = 200,
+            Sensor = SensorKeys.CpuTotal,
+            DisplayUnit = DisplayUnit.Unknown,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(gauge));
+
+        Assert.Equal(DisplayUnit.Auto, gauge.DisplayUnit);
+        Assert.True(gauge.IsEnabled);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.displayUnit");
+    }
+
+    [Fact]
+    public void Bar_UnknownDisplayUnit_FallsBackToAutoWithAWarning()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = SensorKeys.CpuTotal,
+            DisplayUnit = DisplayUnit.Unknown,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.Equal(DisplayUnit.Auto, bar.DisplayUnit);
+        Assert.True(bar.IsEnabled);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.displayUnit");
+    }
+
+    [Fact]
+    public void Sparkline_UnknownDisplayUnit_FallsBackToAutoWithAWarning()
+    {
+        var sparkline = new SparklineWidgetConfig
+        {
+            Id = "sp",
+            Width = 240,
+            Height = 100,
+            Sensor = SensorKeys.NetworkDown,
+            DisplayUnit = DisplayUnit.Unknown,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(sparkline));
+
+        Assert.Equal(DisplayUnit.Auto, sparkline.DisplayUnit);
+        Assert.True(sparkline.IsEnabled);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.displayUnit");
+    }
+
+    [Fact]
+    public void Gauge_ValidDisplayUnit_IsPreservedWithoutAWarning()
+    {
+        var gauge = new GaugeWidgetConfig
+        {
+            Id = "g",
+            Width = 200,
+            Height = 200,
+            Sensor = SensorKeys.NetworkDown,
+            DisplayUnit = DisplayUnit.Megabytes,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(gauge));
+
+        Assert.Equal(DisplayUnit.Megabytes, gauge.DisplayUnit);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.displayUnit");
+    }
+
+    private static PanelConfig CreateConfig(params WidgetConfig[] widgets) =>
+        new()
+        {
+            SchemaVersion = PanelConfig.CurrentSchemaVersion,
+            ActivePageId = "main",
+            Pages =
+            [
+                new PageConfig
+                {
+                    Id = "main",
+                    Widgets = [.. widgets],
+                },
+            ],
+        };
+}

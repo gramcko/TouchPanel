@@ -1,0 +1,26 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Neutral dark palette (plan DD-13). T-10 adds the disabled foreground and widget border
+         tones used by the touch-first widget styles. -->
+    <Color x:Key="PanelBackgroundColor">#FF1B1B1F</Color>
+    <Color x:Key="PanelForegroundColor">#FFEDEDED</Color>
+    <Color x:Key="PanelDisabledForegroundColor">#FF7A7A85</Color>
+    <Color x:Key="PanelAccentColor">#FF3D7EFF</Color>
+    <Color x:Key="WidgetSurfaceColor">#FF2A2A30</Color>
+    <Color x:Key="WidgetPressedColor">#FF3A3A44</Color>
+    <Color x:Key="WidgetDisabledColor">#FF232329</Color>
+    <Color x:Key="WidgetBorderColor">#FF3F3F49</Color>
+    <Color x:Key="WidgetErrorColor">#FFD64545</Color>
+
+    <SolidColorBrush x:Key="PanelBackgroundBrush" Color="{StaticResource PanelBackgroundColor}" />
+    <SolidColorBrush x:Key="PanelForegroundBrush" Color="{StaticResource PanelForegroundColor}" />
+    <SolidColorBrush x:Key="PanelDisabledForegroundBrush" Color="{StaticResource PanelDisabledForegroundColor}" />
+    <SolidColorBrush x:Key="PanelAccentBrush" Color="{StaticResource PanelAccentColor}" />
+    <SolidColorBrush x:Key="WidgetSurfaceBrush" Color="{StaticResource WidgetSurfaceColor}" />
+    <SolidColorBrush x:Key="WidgetPressedBrush" Color="{StaticResource WidgetPressedColor}" />
+    <SolidColorBrush x:Key="WidgetDisabledBrush" Color="{StaticResource WidgetDisabledColor}" />
+    <SolidColorBrush x:Key="WidgetBorderBrush" Color="{StaticResource WidgetBorderColor}" />
+    <SolidColorBrush x:Key="WidgetErrorBrush" Color="{StaticResource WidgetErrorColor}" />
+
+</ResourceDictionary>

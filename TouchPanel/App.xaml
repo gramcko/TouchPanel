@@ -1,0 +1,34 @@
+<Application x:Class="TouchPanel.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- M3-RF-851/M3-RF-842: the ACTIVE theme dictionary is merged once at the
+                     application level so it is the single palette source and a runtime swap
+                     (ThemeManager) reaches realized elements. The default theme is `dark`, which
+                     reproduces the Core-Release palette exactly. Styles.xaml no longer self-merges
+                     a concrete palette. -->
+                <ResourceDictionary Source="Theme/Themes/Dark.xaml" />
+                <ResourceDictionary Source="Theme/Styles.xaml" />
+                <!-- T-10/DD-6: one template dictionary per widget type. -->
+                <ResourceDictionary Source="Widgets/ButtonWidget/ButtonWidgetTemplates.xaml" />
+                <ResourceDictionary Source="Widgets/ToggleWidget/ToggleWidgetTemplates.xaml" />
+                <ResourceDictionary Source="Widgets/LabelWidget/LabelWidgetTemplates.xaml" />
+                <!-- T-11: the data-driven Gauge. -->
+                <ResourceDictionary Source="Widgets/GaugeWidget/GaugeWidgetTemplates.xaml" />
+                <!-- T-06: the touch-first Slider. -->
+                <ResourceDictionary Source="Widgets/SliderWidget/SliderWidgetTemplates.xaml" />
+                <!-- T-07: the history-driven Sparkline. -->
+                <ResourceDictionary Source="Widgets/SparklineWidget/SparklineWidgetTemplates.xaml" />
+                <!-- RF-046/M3: the Clock, ImageButton, and Bar widget types. -->
+                <ResourceDictionary Source="Widgets/ClockWidget/ClockWidgetTemplates.xaml" />
+                <ResourceDictionary Source="Widgets/ImageButtonWidget/ImageButtonWidgetTemplates.xaml" />
+                <ResourceDictionary Source="Widgets/BarWidget/BarWidgetTemplates.xaml" />
+                <!-- User-requested: the Image display widget. -->
+                <ResourceDictionary Source="Widgets/ImageWidget/ImageWidgetTemplates.xaml" />
+                <ResourceDictionary Source="Widgets/UnsupportedWidget/UnsupportedWidgetTemplates.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>
