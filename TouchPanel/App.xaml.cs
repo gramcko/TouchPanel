@@ -74,6 +74,7 @@ public partial class App : Application, IPanelConfigApplyTarget
     private EditModeService? _editModeService;
     private PageSwitchCoordinator? _pageSwitchCoordinator;
     private PageSwitcherViewModel? _pageSwitcherViewModel;
+    private PagesEditorViewModel? _editModePagesViewModel;
     private HotKeyService? _hotKeyService;
     private ReloadDecisionEngine? _reloadEngine;
     private ConfigReloadController? _reloadController;
@@ -1037,6 +1038,10 @@ public partial class App : Application, IPanelConfigApplyTarget
         // T-16/RF-091: the in-panel page selector switches the active page without activation.
         AttachPageSwitcher(window, context.Config);
 
+        // User-requested: page management is also available from inside edit mode. The surface saves
+        // and suspends the edit session around structural changes or an open, then re-enters it.
+        AttachEditModePages(window);
+
         // T-11/RF-064: start ~1 Hz telemetry once the gauges exist and are subscribed. Polling
         // continues while the panel is hidden (D-10); failures never block the panel or the UI.
         // T-04/RF-071: apply the configured interval (already clamped by validation) before the
@@ -1488,6 +1493,86 @@ public partial class App : Application, IPanelConfigApplyTarget
             _logger.Error(ex, "Page switch: wiring the page selector failed; page switching is unavailable");
             _pageSwitcherViewModel = null;
         }
+    }
+
+    /// <summary>
+    /// Wires the inline pages editor shown by the edit toolbar (user-requested page management
+    /// inside edit mode). It reuses the shared single-writer settings boundary and the existing
+    /// page-switch coordinator through <see cref="EditModePageChangeService"/>, which saves and
+    /// suspends an active edit session before a page rebuild and re-enters it afterwards. A missing
+    /// dependency leaves the toolbar surface inert without affecting the panel (RF-012).
+    /// </summary>
+    /// <param name="window">The panel window that hosts the edit overlay.</param>
+    private void AttachEditModePages(MainWindow window)
+    {
+        if (_pageSwitchCoordinator is not { } pageSwitch)
+        {
+            _logger.Debug("Pages: the page-switch coordinator is unavailable; the edit-mode pages surface is not wired");
+            return;
+        }
+
+        var settings = GetSharedSettingsService();
+        if (settings is null)
+        {
+            _logger.Debug("Pages: the settings service is unavailable; the edit-mode pages surface is not wired");
+            return;
+        }
+
+        try
+        {
+            var session = new EditModePageChangeService(
+                settings,
+                pageSwitch,
+                new DelegateEditSessionGate(
+                    () => _editModeService?.IsEditMode == true,
+                    SuspendEditSessionForPageChangeAsync,
+                    () => SetEditModeAsync(enter: true)),
+                _logger);
+
+            _editModePagesViewModel = new PagesEditorViewModel(
+                session,
+                session,
+                () => Config,
+                logger: _logger);
+            window.AttachPagesEditor(_editModePagesViewModel);
+
+            _logger.Information("Pages: the edit-mode pages surface is ready");
+        }
+        catch (Exception ex)
+        {
+            // Composition bugs must not take the panel down; the surface is simply unavailable.
+            _logger.Error(ex, "Pages: wiring the edit-mode pages surface failed");
+            _editModePagesViewModel = null;
+        }
+    }
+
+    /// <summary>
+    /// Saves pending widget edits and exits edit mode before an edit-mode page change rebuilds the
+    /// active page. Returns <see langword="false"/> when the save failed, in which case the page
+    /// change is refused so the unsaved geometry is not lost; the edit session stays active.
+    /// </summary>
+    /// <param name="cancellationToken">Cancels the save/exit.</param>
+    /// <returns><see langword="true"/> when it is safe to change pages.</returns>
+    private async Task<bool> SuspendEditSessionForPageChangeAsync(CancellationToken cancellationToken)
+    {
+        var service = _editModeService;
+        if (service is null || !service.IsEditMode)
+        {
+            return true;
+        }
+
+        var save = await service.SaveAsync(cancellationToken).ConfigureAwait(true);
+        if (save.Attempted && !save.Succeeded)
+        {
+            _logger.Warning("Pages: the page change was refused because the pending layout could not be saved");
+            return false;
+        }
+
+        // The flag flips synchronously, so the page rebuild cannot see an active edit session and the
+        // coordinator's edit-mode switch guard is released for this deliberate, already-saved change.
+        await service.ExitAsync(cancellationToken).ConfigureAwait(true);
+        UpdateEditModeMenuItem();
+        return true;
     }
 
     /// <summary>

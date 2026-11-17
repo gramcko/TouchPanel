@@ -24,8 +24,7 @@
                   ItemContainerStyle="{DynamicResource WidgetContainerStyle}"
                   Focusable="False"
                   IsTabStop="False"
-                  PreviewMouseLeftButtonDown="OnWidgetPreviewMouseLeftButtonDown"
-                  PreviewMouseMove="OnWidgetPreviewMouseMove">
+                  PreviewMouseLeftButtonDown="OnWidgetPreviewMouseLeftButtonDown">
         <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
                 <Canvas Background="Transparent" />

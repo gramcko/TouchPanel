@@ -516,9 +516,17 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
 
         if (!result.Changed)
         {
+            var currentConfig = _configAccessor();
+            var alreadyActive = currentConfig is not null
+                && string.Equals(
+                    result.ResolvedPageId,
+                    PageSwitchCoordinator.ResolveActivePageId(currentConfig),
+                    StringComparison.Ordinal);
             SetStatus(
                 CanManagePages
-                    ? "That page is already active."
+                    ? alreadyActive
+                        ? "That page is already active."
+                        : "The page could not be opened."
                     : "Page switching is unavailable while edit mode is active.",
                 isError: true);
             return false;

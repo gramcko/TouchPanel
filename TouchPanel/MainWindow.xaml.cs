@@ -9,6 +9,7 @@ using TouchPanel.Interop;
 using TouchPanel.Services.Display;
 using TouchPanel.Services.Monitors;
 using TouchPanel.ViewModels;
+using TouchPanel.ViewModels.Settings;
 
 namespace TouchPanel;
 
@@ -268,6 +269,21 @@ public partial class MainWindow : Window, IPanelWindow
         // overlay's drag/resize handles keep their own gestures; page switches are likewise refused
         // by the coordinator during an edit session.
         PageSwitcher.IsPagingEnabled = () => _editModeService?.IsEditMode != true;
+    }
+
+    /// <summary>
+    /// Binds the inline pages editor shown by the edit toolbar (user-requested page management inside
+    /// edit mode). The view model is supplied by the composition root and steps out of and back into
+    /// the edit session around page changes; the window only forwards it to the overlay so no page
+    /// policy lives in the view.
+    /// </summary>
+    /// <param name="pagesEditor">The pages-management presentation state; must not be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="pagesEditor"/> is <see langword="null"/>.</exception>
+    public void AttachPagesEditor(PagesEditorViewModel pagesEditor)
+    {
+        ArgumentNullException.ThrowIfNull(pagesEditor);
+
+        EditOverlay.AttachPagesEditor(pagesEditor);
     }
 
     /// <summary>

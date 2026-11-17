@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using TouchPanel.ViewModels;
+using TouchPanel.ViewModels.Settings;
 
 namespace TouchPanel.Views;
 
@@ -32,6 +33,36 @@ public partial class EditOverlay : UserControl
 
     /// <summary>Gets the edit-mode service bound as this overlay's data context, if any.</summary>
     private EditModeService? Service => DataContext as EditModeService;
+
+    /// <summary>
+    /// Binds the touch pages editor shown by the toolbar's <b>Pages…</b> toggle (user-requested page
+    /// management inside edit mode). The composition root supplies a view model whose structural
+    /// changes step out of and back into the edit session, so the overlay only hosts the surface.
+    /// </summary>
+    /// <param name="pagesEditor">The pages-management presentation state; must not be <see langword="null"/>.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="pagesEditor"/> is <see langword="null"/>.</exception>
+    public void AttachPagesEditor(PagesEditorViewModel pagesEditor)
+    {
+        ArgumentNullException.ThrowIfNull(pagesEditor);
+
+        PagesEditor.DataContext = pagesEditor;
+    }
+
+    /// <summary>
+    /// Refreshes the pages list when the inline surface is opened, so pages added or renamed from the
+    /// Settings window or an external edit are reflected. Refreshing is read-only and never enters
+    /// an edit session or changes focus.
+    /// </summary>
+    /// <param name="sender">The Pages toggle.</param>
+    /// <param name="e">The checked event data.</param>
+    private void OnPagesToggleChecked(object sender, RoutedEventArgs e) =>
+        (PagesEditor.DataContext as PagesEditorViewModel)?.Refresh();
+
+    /// <summary>Closes the inline pages surface without leaving edit mode.</summary>
+    /// <param name="sender">The Close pages button.</param>
+    /// <param name="e">The click event data.</param>
+    private void OnClosePagesClick(object sender, RoutedEventArgs e) =>
+        PagesToggleButton.IsChecked = false;
 
     /// <summary>
     /// Selects the pressed widget (RF-027): a tap or the start of a drag gives arrow-key nudging a
