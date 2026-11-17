@@ -128,75 +128,121 @@
                     Command="{Binding AddPageCommand}" />
         </Grid>
 
-        <!-- Page list: tap a row to select; Open makes it active; Remove asks for confirmation. -->
-        <ItemsControl x:Name="PageItems"
-                      ItemsSource="{Binding Pages}"
-                      Margin="0,8,0,0"
-                      Focusable="False"
-                      IsTabStop="False">
-            <ItemsControl.ItemTemplate>
-                <DataTemplate>
-                    <Border x:Name="PageRow" Style="{StaticResource PagesRowContainerStyle}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+        <!-- Page list: tap a row to select; drag a row up/down to reorder; Open makes it active;
+             Remove asks for confirmation. The drop caret overlays the list while dragging. -->
+        <Grid x:Name="PageListHost" Margin="0,8,0,0">
+            <ItemsControl x:Name="PageItems"
+                          ItemsSource="{Binding Pages}"
+                          Focusable="False"
+                          IsTabStop="False"
+                          PreviewMouseLeftButtonDown="OnPageListPreviewMouseLeftButtonDown"
+                          PreviewMouseMove="OnPageListPreviewMouseMove"
+                          PreviewMouseLeftButtonUp="OnPageListPreviewMouseLeftButtonUp"
+                          LostMouseCapture="OnPageListLostMouseCapture">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border x:Name="PageRow" Style="{StaticResource PagesRowContainerStyle}">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
 
-                            <Button x:Name="SelectPageRowButton"
-                                    Grid.Column="0"
-                                    Style="{StaticResource PagesRowSelectButtonStyle}"
-                                    Command="{Binding DataContext.SelectPageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                    CommandParameter="{Binding Id}"
-                                    AutomationProperties.Name="{Binding DisplayName}">
-                                <StackPanel Orientation="Horizontal">
-                                    <TextBlock Text="{Binding Position, StringFormat={}{0}.}"
-                                               Margin="0,0,8,0"
-                                               VerticalAlignment="Center" />
-                                    <TextBlock Text="{Binding DisplayName}"
-                                               VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="Active"
-                                               Margin="10,0,0,0"
-                                               FontSize="12"
-                                               FontWeight="Bold"
-                                               VerticalAlignment="Center"
-                                               Foreground="{DynamicResource PanelAccentBrush}"
-                                               Visibility="{Binding IsActive, Converter={StaticResource PagesBoolToVisibilityConverter}}" />
-                                </StackPanel>
-                            </Button>
+                                <Button x:Name="SelectPageRowButton"
+                                        Grid.Column="0"
+                                        Style="{StaticResource PagesRowSelectButtonStyle}"
+                                        Command="{Binding DataContext.SelectPageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding Id}"
+                                        AutomationProperties.Name="{Binding DisplayName}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="&#x2630;"
+                                                   Margin="0,0,8,0"
+                                                   FontSize="15"
+                                                   Opacity="0.7"
+                                                   VerticalAlignment="Center"
+                                                   ToolTip="Drag up or down to reorder" />
+                                        <TextBlock Text="{Binding Position, StringFormat={}{0}.}"
+                                                   Margin="0,0,8,0"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   VerticalAlignment="Center"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="Active"
+                                                   Margin="10,0,0,0"
+                                                   FontSize="12"
+                                                   FontWeight="Bold"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource PanelAccentBrush}"
+                                                   Visibility="{Binding IsActive, Converter={StaticResource PagesBoolToVisibilityConverter}}" />
+                                    </StackPanel>
+                                </Button>
 
-                            <Button x:Name="OpenPageButton"
-                                    Grid.Column="1"
-                                    Content="Open"
-                                    Command="{Binding DataContext.OpenPageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                    CommandParameter="{Binding Id}">
-                                <Button.Style>
-                                    <Style TargetType="Button" BasedOn="{StaticResource PagesButtonStyle}">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsActive}" Value="True">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
+                                <Button x:Name="OpenPageButton"
+                                        Grid.Column="1"
+                                        Content="Open"
+                                        Command="{Binding DataContext.OpenPageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding Id}">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource PagesButtonStyle}">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
 
-                            <Button x:Name="RemovePageButton"
-                                    Grid.Column="2"
-                                    Style="{StaticResource PagesButtonStyle}"
-                                    Content="Remove"
-                                    Margin="0"
-                                    IsEnabled="{Binding DataContext.CanRemoveSelected, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                    Command="{Binding DataContext.RequestRemovePageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                    CommandParameter="{Binding Id}" />
-                        </Grid>
-                    </Border>
-                </DataTemplate>
-            </ItemsControl.ItemTemplate>
-        </ItemsControl>
+                                <Button x:Name="RemovePageButton"
+                                        Grid.Column="2"
+                                        Style="{StaticResource PagesButtonStyle}"
+                                        Content="Remove"
+                                        Margin="0"
+                                        IsEnabled="{Binding DataContext.CanRemoveSelected, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        Command="{Binding DataContext.RequestRemovePageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding Id}" />
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+
+            <!-- Insertion caret: a transient, non-hit-testable accent line at the resolved drop slot. -->
+            <Border x:Name="PageDropIndicator"
+                    Height="4"
+                    Margin="0,0,0,0"
+                    VerticalAlignment="Top"
+                    HorizontalAlignment="Stretch"
+                    Background="{DynamicResource PanelAccentBrush}"
+                    CornerRadius="2"
+                    IsHitTestVisible="False"
+                    Visibility="Collapsed"
+                    AutomationProperties.Name="Page drop position" />
+        </Grid>
+
+        <TextBlock Text="Drag a page up or down to reorder."
+                   FontSize="13"
+                   Margin="0,6,0,0"
+                   Opacity="0.8"
+                   Foreground="{DynamicResource PanelForegroundBrush}" />
+
+        <!-- Robust touch fallback for reordering when a drag is not practical. -->
+        <StackPanel Orientation="Horizontal" Margin="0,6,0,0" Focusable="False">
+            <Button x:Name="MovePageUpButton"
+                    Style="{StaticResource PagesButtonStyle}"
+                    Content="Move up"
+                    AutomationProperties.Name="Move selected page up"
+                    IsEnabled="{Binding CanMoveSelectedUp}"
+                    Command="{Binding MovePageUpCommand}" />
+            <Button x:Name="MovePageDownButton"
+                    Style="{StaticResource PagesButtonStyle}"
+                    Content="Move down"
+                    AutomationProperties.Name="Move selected page down"
+                    IsEnabled="{Binding CanMoveSelectedDown}"
+                    Command="{Binding MovePageDownCommand}" />
+        </StackPanel>
 
         <!-- Rename the selected page. -->
         <TextBlock Text="Selected page name" FontSize="13" Margin="0,6,0,2" />

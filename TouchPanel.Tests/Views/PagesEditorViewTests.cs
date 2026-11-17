@@ -33,6 +33,9 @@ public sealed class PagesEditorViewTests
             var newName = Assert.IsType<TextBox>(view.FindName("NewPageNameBox"));
             var status = Assert.IsType<TextBlock>(view.FindName("PagesStatusText"));
             var confirmation = Assert.IsType<Border>(view.FindName("RemoveConfirmation"));
+            var moveUp = Assert.IsType<Button>(view.FindName("MovePageUpButton"));
+            var moveDown = Assert.IsType<Button>(view.FindName("MovePageDownButton"));
+            var dropIndicator = Assert.IsType<Border>(view.FindName("PageDropIndicator"));
             var buttonStyle = Assert.IsType<Style>(view.Resources["PagesButtonStyle"]);
             var rowStyle = Assert.IsType<Style>(view.Resources["PagesRowContainerStyle"]);
 
@@ -42,10 +45,14 @@ public sealed class PagesEditorViewTests
                 AddHeight = add.MinHeight,
                 RenameHeight = rename.MinHeight,
                 NewNameHeight = newName.MinHeight,
+                MoveUpHeight = moveUp.MinHeight,
+                MoveDownHeight = moveDown.MinHeight,
                 StyleHeight = ReadDoubleSetter(buttonStyle, FrameworkElement.MinHeightProperty),
                 RowStyleHeight = ReadDoubleSetter(rowStyle, FrameworkElement.MinHeightProperty),
                 StatusVisibility = status.Visibility,
                 ConfirmationVisibility = confirmation.Visibility,
+                DropIndicatorVisibility = dropIndicator.Visibility,
+                DragEnabled = view.IsReorderDragEnabled,
             };
         });
 
@@ -53,10 +60,50 @@ public sealed class PagesEditorViewTests
         Assert.True(result.AddHeight >= 40);
         Assert.True(result.RenameHeight >= 40);
         Assert.True(result.NewNameHeight >= 40);
+        Assert.True(result.MoveUpHeight >= 40);
+        Assert.True(result.MoveDownHeight >= 40);
         Assert.True(result.StyleHeight >= 40);
         Assert.True(result.RowStyleHeight >= 40);
         Assert.Equal(Visibility.Collapsed, result.StatusVisibility);
         Assert.Equal(Visibility.Collapsed, result.ConfirmationVisibility);
+        Assert.Equal(Visibility.Collapsed, result.DropIndicatorVisibility);
+        Assert.True(result.DragEnabled);
+    }
+
+    [Fact]
+    public async Task PagesEditor_MoveButtonsReorderTheSelectedPageThroughTheViewModel()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var context = CreateContext();
+            var view = new PagesEditorView { DataContext = context.ViewModel };
+            view.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            context.ViewModel.SelectPage("main");
+            view.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var up = Assert.IsType<Button>(view.FindName("MovePageUpButton"));
+            var down = Assert.IsType<Button>(view.FindName("MovePageDownButton"));
+            var upEnabled = up.IsEnabled;
+            var downEnabled = down.IsEnabled;
+            var boundToViewModel = ReferenceEquals(down.Command, context.ViewModel.MovePageDownCommand);
+
+            down.Command.Execute(null);
+            view.Dispatcher.Invoke(() => { }, DispatcherPriority.Background);
+
+            return (
+                upEnabled,
+                downEnabled,
+                boundToViewModel,
+                order: context.ViewModel.Pages.Select(page => page.Id).ToArray());
+        });
+
+        Assert.False(result.upEnabled);
+        Assert.True(result.downEnabled);
+        Assert.True(result.boundToViewModel);
+        Assert.Equal(["second", "main"], result.order);
     }
 
     [Fact]

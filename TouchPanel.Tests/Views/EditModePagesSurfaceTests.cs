@@ -74,6 +74,7 @@ public sealed class EditModePagesSurfaceTests
                 ToggleFocusable = toggle.Focusable,
                 ToggleMinHeight = toggle.MinHeight,
                 CloseFocusable = close.Focusable,
+                DragEnabled = editor.IsReorderDragEnabled,
             };
         });
 
@@ -86,6 +87,7 @@ public sealed class EditModePagesSurfaceTests
         Assert.False(result.ToggleFocusable);
         Assert.True(result.ToggleMinHeight >= 40);
         Assert.False(result.CloseFocusable);
+        Assert.True(result.DragEnabled);
     }
 
     private static PanelConfig ConfigWithOneWidget() => new()

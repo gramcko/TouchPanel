@@ -35,9 +35,37 @@ public sealed record PageRemovalResult
 }
 
 /// <summary>
+/// Outcome of moving (reordering) one page. The active page is preserved by id, so a reorder never
+/// changes which page is shown even when that page's index changes; when the configured active id is
+/// missing, the deterministic first-page fallback is applied. A no-op (same position, unknown page,
+/// or a single-page list) returns the original list and <see cref="Moved"/> = <see langword="false"/>.
+/// </summary>
+public sealed record PageMoveResult
+{
+    /// <summary>Gets a value indicating whether the page order changed.</summary>
+    public required bool Moved { get; init; }
+
+    /// <summary>Gets the resulting page list in the new order (the original list when nothing moved).</summary>
+    public required IReadOnlyList<PageConfig> Pages { get; init; }
+
+    /// <summary>Gets the active page id after the move (unchanged by id; first page when missing).</summary>
+    public required string ActivePageId { get; init; }
+
+    /// <summary>Gets the 0-based index the page occupied before the move, or -1 when it was unknown.</summary>
+    public int FromIndex { get; init; }
+
+    /// <summary>Gets the 0-based index the page occupies after the move, or -1 when it was unknown.</summary>
+    public int ToIndex { get; init; }
+
+    /// <summary>Gets a notification-safe reason when the move was refused; otherwise <see langword="null"/>.</summary>
+    public string? FailureReason { get; init; }
+}
+
+/// <summary>
 /// Pure page-list operations for the touch pages editor (user-requested pages management): create a
 /// page with a unique id and a sensible default name, rename a page, remove a page with the
-/// last-page guard, and resolve the active page deterministically when the active page is removed.
+/// last-page guard, resolve the active page deterministically when the active page is removed, and
+/// reorder pages while keeping the active page active by id.
 /// </summary>
 /// <remarks>
 /// The helpers never touch a store, a window, or WPF. They return new lists/objects so a caller can
@@ -198,6 +226,95 @@ public static class PageListOperations
     }
 
     /// <summary>
+    /// Moves one page to <paramref name="targetIndex"/>, preserving every page object (and therefore
+    /// every widget), the page count, and the active page <b>by id</b>. The target is clamped to the
+    /// list bounds; dropping a page on its current index is a no-op that saves nothing. The last-page
+    /// guard is inherently satisfied because a move never changes the page count.
+    /// </summary>
+    /// <param name="pages">The existing pages; must not be <see langword="null"/>.</param>
+    /// <param name="pageId">The id of the page to move.</param>
+    /// <param name="targetIndex">The desired 0-based destination index; clamped to the list bounds.</param>
+    /// <param name="activePageId">The currently active page id, or <see langword="null"/> when unknown.</param>
+    /// <returns>The move outcome; never <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="pages"/> is <see langword="null"/>.</exception>
+    public static PageMoveResult MovePage(
+        IReadOnlyList<PageConfig> pages,
+        string pageId,
+        int targetIndex,
+        string? activePageId)
+    {
+        ArgumentNullException.ThrowIfNull(pages);
+
+        var index = FindIndex(pages, pageId);
+        if (index < 0)
+        {
+            return RefuseMove(pages, activePageId, -1, "The selected page no longer exists.");
+        }
+
+        var destination = Math.Clamp(targetIndex, 0, pages.Count - 1);
+        if (destination == index)
+        {
+            return new PageMoveResult
+            {
+                Moved = false,
+                Pages = pages,
+                ActivePageId = ResolveActive(pages, activePageId),
+                FromIndex = index,
+                ToIndex = index,
+            };
+        }
+
+        var updated = new List<PageConfig>(pages.Count);
+        for (var cursor = 0; cursor < pages.Count; cursor++)
+        {
+            if (cursor != index)
+            {
+                updated.Add(pages[cursor]);
+            }
+        }
+
+        // Moving down removes before inserting, so the destination is the index in the shortened
+        // list. Rebuilding by index keeps the result independent of the movement direction.
+        updated.Insert(destination, pages[index]);
+
+        return new PageMoveResult
+        {
+            Moved = true,
+            Pages = updated,
+            ActivePageId = ResolveActive(updated, activePageId),
+            FromIndex = index,
+            ToIndex = destination,
+        };
+    }
+
+    /// <summary>
+    /// Moves one page by a relative offset (for example -1 for "Move up" and +1 for "Move down").
+    /// Out-of-range offsets are clamped to the ends, so moving the first page up is a no-op.
+    /// </summary>
+    /// <param name="pages">The existing pages; must not be <see langword="null"/>.</param>
+    /// <param name="pageId">The id of the page to move.</param>
+    /// <param name="offset">The signed number of positions to move.</param>
+    /// <param name="activePageId">The currently active page id, or <see langword="null"/> when unknown.</param>
+    /// <returns>The move outcome; never <see langword="null"/>.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="pages"/> is <see langword="null"/>.</exception>
+    public static PageMoveResult MovePageBy(
+        IReadOnlyList<PageConfig> pages,
+        string pageId,
+        int offset,
+        string? activePageId)
+    {
+        ArgumentNullException.ThrowIfNull(pages);
+
+        var index = FindIndex(pages, pageId);
+        if (index < 0)
+        {
+            return RefuseMove(pages, activePageId, -1, "The selected page no longer exists.");
+        }
+
+        return MovePage(pages, pageId, index + offset, activePageId);
+    }
+
+    /// <summary>
     /// Creates a page id that is unique within <paramref name="pages"/>, using <c>page-N</c> with the
     /// first free positive <c>N</c>. The ids are compared ordinally, matching the validator and the
     /// switch coordinator.
@@ -283,6 +400,20 @@ public static class PageListOperations
         Removed = false,
         Pages = pages,
         ActivePageId = ResolveActive(pages, activePageId),
+        FailureReason = reason,
+    };
+
+    private static PageMoveResult RefuseMove(
+        IReadOnlyList<PageConfig> pages,
+        string? activePageId,
+        int index,
+        string reason) => new()
+    {
+        Moved = false,
+        Pages = pages,
+        ActivePageId = ResolveActive(pages, activePageId),
+        FromIndex = index,
+        ToIndex = index,
         FailureReason = reason,
     };
 

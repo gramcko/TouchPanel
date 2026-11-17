@@ -20,7 +20,8 @@ public sealed record PageEditorItem(string Id, string DisplayName, bool IsActive
 
 /// <summary>
 /// Touch-first pages management presentation state (user-requested pages management): list, select,
-/// switch, add, rename, and remove pages. Every structural change is persisted atomically through
+/// switch, add, rename, remove, and reorder pages (drag or the move buttons). Every structural change
+/// is persisted atomically through
 /// the shared single-writer settings coordinator (<see cref="ISettingsService"/>), which preserves
 /// the other configuration sections and rebuilds the active page through the shared apply pipeline;
 /// switching the active page reuses the existing <see cref="IPageSwitchService"/> so the edit-mode
@@ -29,9 +30,10 @@ public sealed record PageEditorItem(string Id, string DisplayName, bool IsActive
 /// <remarks>
 /// The view model is WPF-free apart from notifications, never mutates the running configuration
 /// before a successful save, refuses to remove the last page, and falls back to the first page (with
-/// a log entry) when the active page is removed. Add/rename/remove are disabled while the optional
-/// <c>canManage</c> gate reports that edit mode owns the panel, so an edit session is never
-/// invalidated by a page-list rebuild.
+/// a log entry) when the active page is removed. Reordering preserves the active page by id, keeps
+/// every page's widgets and every other section, and is a no-op when the destination is the current
+/// position. Add/rename/remove/reorder are disabled while the optional <c>canManage</c> gate reports
+/// that edit mode owns the panel, so an edit session is never invalidated by a page-list rebuild.
 /// </remarks>
 public sealed class PagesEditorViewModel : INotifyPropertyChanged
 {
@@ -81,6 +83,8 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         AddPageCommand = new AsyncRelayCommand(AddPageAsync);
         RenamePageCommand = new AsyncRelayCommand(RenameSelectedAsync);
         SwitchPageCommand = new AsyncRelayCommand(SwitchToSelectedAsync);
+        MovePageUpCommand = new AsyncRelayCommand(MoveSelectedUpAsync);
+        MovePageDownCommand = new AsyncRelayCommand(MoveSelectedDownAsync);
         OpenPageCommand = new OpenPageRowCommand(OpenPageAsync);
         RequestRemoveCommand = new RelayCommand(RequestRemoveSelected);
         RequestRemovePageCommand = new SelectPageRowCommand(RequestRemovePage);
@@ -138,6 +142,19 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     /// <summary>Gets a value indicating whether the selected page can be made active.</summary>
     public bool CanSwitchToSelected => CanManagePages && HasSelection && SelectedItem?.IsActive == false;
 
+    /// <summary>Gets a value indicating whether the selected page can move one position up.</summary>
+    public bool CanMoveSelectedUp => CanManagePages && !IsBusy && SelectedIndex > 0;
+
+    /// <summary>Gets a value indicating whether the selected page can move one position down.</summary>
+    public bool CanMoveSelectedDown
+    {
+        get
+        {
+            var index = SelectedIndex;
+            return CanManagePages && !IsBusy && index >= 0 && index < _pages.Count - 1;
+        }
+    }
+
     /// <summary>Gets a value indicating whether the inline remove confirmation is open.</summary>
     public bool IsRemoveConfirmationVisible => _isRemoveConfirmationVisible;
 
@@ -148,7 +165,14 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     public bool IsBusy
     {
         get => _isBusy;
-        private set => SetProperty(ref _isBusy, value);
+        private set
+        {
+            if (SetProperty(ref _isBusy, value))
+            {
+                OnPropertyChanged(nameof(CanMoveSelectedUp));
+                OnPropertyChanged(nameof(CanMoveSelectedDown));
+            }
+        }
     }
 
     /// <summary>Gets the latest status line, or <see langword="null"/> when idle.</summary>
@@ -186,6 +210,12 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     /// <summary>Gets the command that makes the selected page active.</summary>
     public ICommand SwitchPageCommand { get; }
 
+    /// <summary>Gets the command that moves the selected page one position up (touch fallback for drag).</summary>
+    public ICommand MovePageUpCommand { get; }
+
+    /// <summary>Gets the command that moves the selected page one position down (touch fallback for drag).</summary>
+    public ICommand MovePageDownCommand { get; }
+
     /// <summary>Gets the command that opens (makes active) the page id passed as its parameter.</summary>
     public ICommand OpenPageCommand { get; }
 
@@ -205,6 +235,26 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         _selectedPageId is null
             ? null
             : _pages.FirstOrDefault(item => string.Equals(item.Id, _selectedPageId, StringComparison.Ordinal));
+
+    private int SelectedIndex => IndexOf(_selectedPageId);
+
+    private int IndexOf(string? pageId)
+    {
+        if (pageId is null)
+        {
+            return -1;
+        }
+
+        for (var index = 0; index < _pages.Count; index++)
+        {
+            if (string.Equals(_pages[index].Id, pageId, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
 
     /// <summary>
     /// Refreshes the exposed pages, active flag, and selection from the running configuration.
@@ -371,6 +421,131 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         Refresh(selected.Id);
         SetStatus($"Renamed the page to '{normalized}'.", isError: false);
         _logger.Information("Pages: renamed page {PageId} to {PageName}", selected.Id, normalized);
+        return true;
+    }
+
+    /// <summary>Moves the selected page one position up (touch fallback for drag).</summary>
+    /// <returns><see langword="true"/> when the order changed and was saved.</returns>
+    public Task<bool> MoveSelectedUpAsync()
+    {
+        var index = SelectedIndex;
+        if (!EnsureCanManage())
+        {
+            return Task.FromResult(false);
+        }
+
+        if (index < 0)
+        {
+            SetStatus("Select a page to move.", isError: true);
+            return Task.FromResult(false);
+        }
+
+        if (index == 0)
+        {
+            SetStatus("The page is already first.", isError: false);
+            return Task.FromResult(false);
+        }
+
+        return MovePageAsync(_pages[index].Id, index - 1);
+    }
+
+    /// <summary>Moves the selected page one position down (touch fallback for drag).</summary>
+    /// <returns><see langword="true"/> when the order changed and was saved.</returns>
+    public Task<bool> MoveSelectedDownAsync()
+    {
+        var index = SelectedIndex;
+        if (!EnsureCanManage())
+        {
+            return Task.FromResult(false);
+        }
+
+        if (index < 0)
+        {
+            SetStatus("Select a page to move.", isError: true);
+            return Task.FromResult(false);
+        }
+
+        if (index >= _pages.Count - 1)
+        {
+            SetStatus("The page is already last.", isError: false);
+            return Task.FromResult(false);
+        }
+
+        return MovePageAsync(_pages[index].Id, index + 1);
+    }
+
+    /// <summary>
+    /// Moves a page to <paramref name="targetIndex"/> and persists the new order through the shared
+    /// single writer. Only the page order changes: every page (with its widgets), every other section,
+    /// and the active page id are preserved, so the page that was active stays active by id even when
+    /// its index changes. A drop on the current position, an unknown page, or a single-page list is a
+    /// no-op that saves nothing. The last-page guard, edit-mode gate, and fallback stay in force.
+    /// </summary>
+    /// <param name="pageId">The id of the page to move.</param>
+    /// <param name="targetIndex">The desired 0-based destination index; clamped to the list bounds.</param>
+    /// <returns><see langword="true"/> when the order changed and was saved.</returns>
+    public async Task<bool> MovePageAsync(string pageId, int targetIndex)
+    {
+        if (!EnsureCanManage())
+        {
+            return false;
+        }
+
+        if (IsBusy)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(pageId))
+        {
+            SetStatus("Select a page to move.", isError: true);
+            return false;
+        }
+
+        var config = _configAccessor();
+        if (config is null)
+        {
+            SetStatus("No configuration is available to change.", isError: true);
+            return false;
+        }
+
+        var move = PageListOperations.MovePage(
+            config.Pages,
+            pageId,
+            targetIndex,
+            PageSwitchCoordinator.ResolveActivePageId(config));
+
+        if (!move.Moved)
+        {
+            if (move.FailureReason is not null)
+            {
+                SetStatus(move.FailureReason, isError: true);
+            }
+            else
+            {
+                SetStatus("The page is already in that position.", isError: false);
+            }
+
+            return false;
+        }
+
+        var applied = await ApplyPagesAsync(move.Pages, move.ActivePageId).ConfigureAwait(true);
+        if (!applied)
+        {
+            return false;
+        }
+
+        Refresh(pageId);
+        var label = move.ToIndex >= 0 && move.ToIndex < move.Pages.Count
+            ? PageListOperations.DisplayName(move.Pages[move.ToIndex])
+            : pageId;
+        SetStatus($"Moved '{label}' to position {move.ToIndex + 1}.", isError: false);
+        _logger.Information(
+            "Pages: moved page {PageId} from position {FromPosition} to {ToPosition}; active page stays {ActivePageId}",
+            pageId,
+            move.FromIndex + 1,
+            move.ToIndex + 1,
+            move.ActivePageId);
         return true;
     }
 
@@ -629,6 +804,8 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanRemoveSelected));
         OnPropertyChanged(nameof(CanAddPage));
         OnPropertyChanged(nameof(CanSwitchToSelected));
+        OnPropertyChanged(nameof(CanMoveSelectedUp));
+        OnPropertyChanged(nameof(CanMoveSelectedDown));
     }
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
