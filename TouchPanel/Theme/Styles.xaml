@@ -17,6 +17,15 @@
     <vm:AppearanceForegroundConverter x:Key="AppearanceForegroundConverter" />
     <vm:AppearanceAccentFillConverter x:Key="AppearanceAccentFillConverter" />
 
+    <!--
+        Stock-chrome cleanup: the default ScrollViewer template fills the bottom-right corner (the
+        square where the vertical and horizontal bars meet) with the system Control brush, which
+        renders as a light gray/white block on every non-light theme. Overriding that system key with
+        a transparent brush (the only neutral value that works app-wide without hard-coding a palette
+        color) lets the surrounding panel show through, in every theme.
+    -->
+    <SolidColorBrush x:Key="{x:Static SystemColors.ControlBrushKey}" Color="Transparent" />
+
     <!-- Base text style (plan DD-13). -->
     <Style x:Key="PanelTextStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
@@ -261,6 +270,170 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!--
+        User-requested app-wide scrollbar theming. Every ScrollViewer/ScrollBar picks up the implicit
+        ScrollBar style below, so the property editor, the Settings/Pages editor, the palette strip,
+        and the page switcher all scroll with the same slim, rounded, theme-driven surface instead of
+        the stock Windows light/gray chrome. Every color is a DynamicResource palette key, so a
+        runtime theme swap re-resolves track and thumb in all built-in themes (dark/light/
+        highContrast/midnight/nord/oled); only transparent/neutral chrome is hard-coded.
+    -->
+
+    <!-- Page-paging area of the track: no arrow buttons and no chrome, but still hit-testable so a
+         tap on the empty track pages like the stock scrollbar. -->
+    <Style x:Key="TouchScrollBarPageButtonStyle" TargetType="RepeatButton">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="{TemplateBinding Background}" SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!--
+        The thumb is visible without hover (touchscreens lack it): the muted theme foreground is the
+        resting fill, and the accent marks hover/drag so the grab feedback is immediate. The minimum
+        thumb length is set per orientation by the templates below (24 DIP) so a very long document
+        never shrinks the grab target below a finger.
+    -->
+    <Style x:Key="TouchScrollBarThumbStyle" TargetType="Thumb">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Background" Value="{DynamicResource PanelDisabledForegroundBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Border x:Name="ThumbSurface"
+                            Margin="1"
+                            Background="{TemplateBinding Background}"
+                            CornerRadius="4"
+                            SnapsToDevicePixels="True" />
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ThumbSurface" Property="Background" Value="{DynamicResource PanelAccentBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="ThumbSurface" Property="Background" Value="{DynamicResource PanelAccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Vertical scrollbar: 14 DIP hit strip, 10 DIP visible rounded track, no arrow buttons. -->
+    <ControlTemplate x:Key="TouchScrollBarVerticalTemplate" TargetType="ScrollBar">
+        <Grid x:Name="ScrollBarRoot" Background="Transparent" SnapsToDevicePixels="True">
+            <Border x:Name="TrackSurface"
+                    Margin="2"
+                    Background="{DynamicResource WidgetDisabledBrush}"
+                    BorderBrush="{DynamicResource WidgetBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="5" />
+            <Track x:Name="PART_Track"
+                   Margin="2"
+                   Orientation="Vertical"
+                   IsDirectionReversed="True">
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource TouchScrollBarPageButtonStyle}"
+                                  Command="ScrollBar.PageUpCommand" />
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                    <Thumb Style="{StaticResource TouchScrollBarThumbStyle}"
+                           MinHeight="24"
+                           Cursor="SizeNS" />
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource TouchScrollBarPageButtonStyle}"
+                                  Command="ScrollBar.PageDownCommand" />
+                </Track.IncreaseRepeatButton>
+            </Track>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <!-- Subtle whole-track hover feedback in addition to the thumb; never the only cue. -->
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="TrackSurface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="ScrollBarRoot" Property="Opacity" Value="0.6" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!-- Horizontal scrollbar: same surface rotated; the thumb keeps its own minimum length. -->
+    <ControlTemplate x:Key="TouchScrollBarHorizontalTemplate" TargetType="ScrollBar">
+        <Grid x:Name="ScrollBarRoot" Background="Transparent" SnapsToDevicePixels="True">
+            <Border x:Name="TrackSurface"
+                    Margin="2"
+                    Background="{DynamicResource WidgetDisabledBrush}"
+                    BorderBrush="{DynamicResource WidgetBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="5" />
+            <Track x:Name="PART_Track"
+                   Margin="2"
+                   Orientation="Horizontal"
+                   IsDirectionReversed="False">
+                <Track.DecreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource TouchScrollBarPageButtonStyle}"
+                                  Command="ScrollBar.PageLeftCommand" />
+                </Track.DecreaseRepeatButton>
+                <Track.Thumb>
+                    <Thumb Style="{StaticResource TouchScrollBarThumbStyle}"
+                           MinWidth="24"
+                           Cursor="SizeWE" />
+                </Track.Thumb>
+                <Track.IncreaseRepeatButton>
+                    <RepeatButton Style="{StaticResource TouchScrollBarPageButtonStyle}"
+                                  Command="ScrollBar.PageRightCommand" />
+                </Track.IncreaseRepeatButton>
+            </Track>
+        </Grid>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="TrackSurface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="ScrollBarRoot" Property="Opacity" Value="0.6" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!--
+        Implicit app-wide scrollbar style: a 14 DIP touch strip around a 10 DIP visible rounded track,
+        with a dedicated template per orientation so the thumb, paging commands, and minimum grab
+        length are correct both vertically and horizontally.
+    -->
+    <Style TargetType="ScrollBar">
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Width" Value="14" />
+        <Setter Property="MinWidth" Value="14" />
+        <Setter Property="Height" Value="Auto" />
+        <Setter Property="Template" Value="{StaticResource TouchScrollBarVerticalTemplate}" />
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="Height" Value="14" />
+                <Setter Property="MinHeight" Value="14" />
+                <Setter Property="Template" Value="{StaticResource TouchScrollBarHorizontalTemplate}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Blend the default ScrollViewer chrome (border/background) with the surrounding panel; the
+         stock values are already neutral, so this only pins them against future theme defaults. -->
+    <Style TargetType="ScrollViewer">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
     </Style>
 
     <Style x:Key="TouchSliderStyle" TargetType="Slider">
