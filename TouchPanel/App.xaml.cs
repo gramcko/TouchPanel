@@ -24,6 +24,7 @@ using TouchPanel.Services.Logging;
 using TouchPanel.Services.Monitors;
 using TouchPanel.Services.Notifications;
 using TouchPanel.Services.Processes;
+using TouchPanel.Services.Setup;
 using TouchPanel.Services.SingleInstance;
 using TouchPanel.Services.Startup;
 using TouchPanel.Services.Time;
@@ -32,10 +33,12 @@ using TouchPanel.Theme;
 using TouchPanel.ViewModels;
 using TouchPanel.ViewModels.Hotkeys;
 using TouchPanel.ViewModels.Settings;
+using TouchPanel.ViewModels.Setup;
 using TouchPanel.Views;
 using TouchPanel.Views.Edit;
 using TouchPanel.Views.Hotkeys;
 using TouchPanel.Views.Settings;
+using TouchPanel.Views.Setup;
 using TouchPanel.Widgets;
 
 namespace TouchPanel;
@@ -78,6 +81,8 @@ public partial class App : Application, IPanelConfigApplyTarget
     private ConfigImportExport? _configImportExport;
     private PanelConfigApplier? _panelConfigApplier;
     private SettingsCoordinatorProvider? _settingsCoordinatorProvider;
+    private ISettingsService? _firstRunSettings;
+    private bool _isFirstRun;
     private SettingsWindow? _settingsWindow;
     private HotkeysEditorWindow? _hotkeysEditorWindow;
     private AppearanceState? _appearanceState;
@@ -384,6 +389,16 @@ public partial class App : Application, IPanelConfigApplyTarget
         // T-06/RF-073: load panel.json once, off the UI thread (RNF-004). The store classifies
         // the four RF-075 states, generates first-run defaults, and recovers from corrupt or
         // future sources; the window and tray do not block on it.
+        //
+        // First-run detection must happen before the load: the store creates and persists
+        // panel.json when it is missing, so checking afterwards would always report "not first
+        // run". The decision is logged here and drives the one-time setup window below.
+        _isFirstRun = FirstRunDetection.IsFirstRun(ConfigPaths.Default.PanelFile);
+        _logger.Information(
+            "Startup: configuration presence checked. FirstRun={FirstRun} ConfigFile={PanelFile}",
+            _isFirstRun,
+            ConfigPaths.Default.PanelFile);
+
         _configLoadTask = LoadConfigurationAsync();
 
         // T-07/T-08: monitor selection is evaluated on demand, never polled (RF-022); the same
@@ -689,17 +704,39 @@ public partial class App : Application, IPanelConfigApplyTarget
             // Guaranteed off the UI thread even when the load completed before this continuation
             // was attached, so registry access, monitor enumeration, state I/O, and notifications
             // never run on the dispatcher (RNF-004).
-            panelStartup = await Task.Run(async () =>
-            {
-                ApplyConfigurationStartup(result);
-                return await PreparePanelStartupAsync(result).ConfigureAwait(false);
-            }).ConfigureAwait(false);
+            await Task.Run(() => ApplyConfigurationStartup(result)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             // The composition root must never take the process down over configuration or
             // startup-registration handling (RF-004, RNF-013).
             _logger.Error(ex, "Configuration: applying the startup configuration failed unexpectedly");
+            Notifier.Notify(
+                "TouchPanel",
+                "The configuration or the start-with-Windows setting could not be applied; TouchPanel continues running.",
+                NotificationSeverity.Warning);
+        }
+
+        // First run: ask for the monitor and start-with-Windows before the panel is placed. The
+        // wizard is failure-isolated: any problem leaves the generated defaults in place and
+        // startup continues exactly as today.
+        try
+        {
+            result = await RunFirstRunSetupAsync(result).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "First run: the setup step failed unexpectedly; startup continues with the defaults");
+        }
+
+        try
+        {
+            // Monitor selection and state I/O also stay off the UI thread.
+            panelStartup = await Task.Run(() => PreparePanelStartupAsync(result)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Configuration: preparing the startup panel state failed unexpectedly");
             Notifier.Notify(
                 "TouchPanel",
                 "The configuration or the start-with-Windows setting could not be applied; TouchPanel continues running.",
@@ -718,6 +755,126 @@ public partial class App : Application, IPanelConfigApplyTarget
                 _logger.Error(ex, "Panel: applying the startup panel state failed unexpectedly");
             }
         }
+    }
+
+    /// <summary>
+    /// Shows the one-time first-run setup window (monitor choice + start-with-Windows) before the
+    /// panel is placed. Only invoked when <c>panel.json</c> did not exist before the store loaded.
+    /// The wizard persists its choices through the shared single-writer settings path; on skip, an
+    /// empty monitor enumeration, or any failure, the generated defaults stay in place and startup
+    /// continues. Returns the load result updated with the applied configuration so monitor
+    /// selection uses the chosen target.
+    /// </summary>
+    /// <param name="result">The classified load result.</param>
+    /// <returns>The load result to continue with (possibly carrying the wizard's saved config).</returns>
+    private async Task<ConfigLoadResult?> RunFirstRunSetupAsync(ConfigLoadResult? result)
+    {
+        if (!_isFirstRun)
+        {
+            return result;
+        }
+
+        // The wizard is one-shot even when it cannot be shown; a later start must not retry it
+        // (panel.json will exist after the store's first-run save in any case).
+        _isFirstRun = false;
+
+        if (result?.Config is not { } firstRunConfig || Config is null)
+        {
+            _logger.Warning("First run: no effective configuration is available; the setup window was skipped");
+            return result;
+        }
+
+        var settings = GetFirstRunSettingsService();
+        if (settings is null)
+        {
+            _logger.Warning("First run: the settings apply path is unavailable; the setup window was skipped");
+            return result;
+        }
+
+        var viewModel = new FirstRunSetupViewModel(
+            new Win32MonitorEnumerator(_logger),
+            settings,
+            firstRunConfig.Startup.StartWithWindows,
+            _logger);
+
+        try
+        {
+            await viewModel.InitializeAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // InitializeAsync already contains enumeration failures; this guards composition bugs.
+            _logger.Error(ex, "First run: preparing the setup window failed unexpectedly; the defaults are kept");
+        }
+
+        _logger.Information("First run: showing the setup window");
+        try
+        {
+            await Dispatcher.InvokeAsync(() =>
+            {
+                try
+                {
+                    var window = new FirstRunSetupWindow(viewModel);
+                    window.ShowDialog();
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "First run: the setup window could not be shown; the defaults are kept");
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "First run: showing the setup window failed unexpectedly; the defaults are kept");
+        }
+
+        if (viewModel.Applied && Config is { } applied)
+        {
+            // Monitor selection and placement below read the configuration from the result.
+            result = result with { Config = applied };
+            _logger.Information(
+                "First run: setup completed; continuing startup with the chosen monitor and startup settings. StartWithWindows={StartWithWindows}",
+                applied.Startup.StartWithWindows);
+        }
+        else
+        {
+            _logger.Information("First run: no setup choices were saved; continuing startup with the defaults");
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Gets the settings boundary used by the first-run wizard. It is a <see
+    /// cref="SettingsCoordinator"/> over the same single-writer store, the same running-config
+    /// accessor, and the same startup registration as every settings surface, so the wizard writes
+    /// one atomic candidate and preserves every other section. Its apply target is deliberately
+    /// inert: the panel is not placed or rendered yet, and the startup path applies the saved
+    /// configuration immediately afterwards through the normal pipeline.
+    /// </summary>
+    /// <returns>The settings boundary, or <see langword="null"/> before the configuration is loaded.</returns>
+    private ISettingsService? GetFirstRunSettingsService()
+    {
+        if (_firstRunSettings is { } existing)
+        {
+            return existing;
+        }
+
+        var store = _configStore;
+        if (Config is null || store is null)
+        {
+            return null;
+        }
+
+        _firstRunSettings = new SettingsCoordinator(
+            () => Config,
+            store,
+            new PanelConfigApplier(new DeferredPanelConfigApplyTarget(), _logger),
+            new RegistryStartupRegistration(new HkcuRunRegistry(), Environment.ProcessPath, _logger),
+            updated => Config = updated,
+            _logger);
+
+        return _firstRunSettings;
     }
 
     private void ApplyConfigurationStartup(ConfigLoadResult? result)
