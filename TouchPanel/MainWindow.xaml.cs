@@ -308,11 +308,12 @@ public partial class MainWindow : Window, IPanelWindow
 
     /// <summary>
     /// Edit-mode keyboard behavior (RF-027/RF-060): routes the fixed M2 local shortcut set (Esc exit,
-    /// arrow nudge, Delete remove, Ctrl+D duplicate, Ctrl+G toggle snap) that
-    /// <see cref="LocalShortcuts"/> resolves. Keys are ignored entirely outside edit mode, so normal
-    /// operation stays keyboard-independent and no keyboard focus is required (RF-025/M2-RF-602);
-    /// the resolved command never activates the panel (M2-RF-604). The routing itself lives in
-    /// <see cref="TryHandleEditModeKey(Key)"/> so it stays testable without synthesizing key events.
+    /// arrow nudge, Delete remove, Ctrl+D duplicate, Ctrl+G toggle snap, Ctrl+Z undo, Ctrl+Y redo)
+    /// that <see cref="LocalShortcuts"/> resolves. Keys are ignored entirely outside edit mode, so
+    /// normal operation stays keyboard-independent and no keyboard focus is required
+    /// (RF-025/M2-RF-602); the resolved command never activates the panel (M2-RF-604). The routing
+    /// itself lives in <see cref="TryHandleEditModeKey(Key)"/> so it stays testable without
+    /// synthesizing key events.
     /// </summary>
     /// <param name="e">The key event data.</param>
     protected override void OnPreviewKeyDown(KeyEventArgs e)
@@ -382,6 +383,10 @@ public partial class MainWindow : Window, IPanelWindow
                 return service.DuplicateSelectedWidget();
             case LocalShortcut.ToggleSnap:
                 return service.ToggleSnap();
+            case LocalShortcut.Undo:
+                return service.TryUndo();
+            case LocalShortcut.Redo:
+                return service.TryRedo();
             default:
                 return false;
         }
@@ -419,6 +424,12 @@ public partial class MainWindow : Window, IPanelWindow
                 return true;
             case Key.G:
                 mapped = LocalShortcutKey.G;
+                return true;
+            case Key.Z:
+                mapped = LocalShortcutKey.Z;
+                return true;
+            case Key.Y:
+                mapped = LocalShortcutKey.Y;
                 return true;
             default:
                 mapped = default;

@@ -471,6 +471,22 @@
                            Orientation="Horizontal"
                            HorizontalAlignment="Left"
                            Focusable="False">
+                    <!--
+                        User-requested undo/redo: touch-sized buttons with the service's
+                        CanUndo/CanRedo state, so the affordance is disabled exactly when there is
+                        nothing to restore. Ctrl+Z / Ctrl+Y reach the same service methods.
+                    -->
+                    <Button x:Name="UndoButton"
+                            Style="{StaticResource EditToolbarButtonStyle}"
+                            Content="Undo"
+                            IsEnabled="{Binding CanUndo, Mode=OneWay}"
+                            Click="OnUndoClick" />
+                    <Button x:Name="RedoButton"
+                            Style="{StaticResource EditToolbarButtonStyle}"
+                            Content="Redo"
+                            IsEnabled="{Binding CanRedo, Mode=OneWay}"
+                            Click="OnRedoClick" />
+
                     <!-- T-15 snap toggle (M2-RF-441/M2-RF-445): touch on/off for grid snap + alignment. -->
                     <ToggleButton x:Name="SnapToggleButton"
                                   Style="{StaticResource EditToolbarToggleStyle}"

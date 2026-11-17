@@ -1432,7 +1432,7 @@ public partial class App : Application, IPanelConfigApplyTarget
 
         try
         {
-            _editModeService = new EditModeService(config, page, store, _logger, Notifier, _widgetRegistry, _widgetRegistry, new ExecutableFilePicker(), _clockCulture, new SensorCatalog(_monitoringService), new ImageFilePicker());
+            _editModeService = new EditModeService(config, page, store, _logger, Notifier, _widgetRegistry, _widgetRegistry, new ExecutableFilePicker(), _clockCulture, new SensorCatalog(_monitoringService), new ImageFilePicker(), config => AttachActivePage(window, config));
             viewModel.AttachEditModeService(_editModeService);
             window.AttachEditModeService(_editModeService);
             window.EditModeExitRequested -= OnEditModeExitRequested;

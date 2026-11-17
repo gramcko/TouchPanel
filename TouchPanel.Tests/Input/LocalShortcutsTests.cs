@@ -18,6 +18,8 @@ public sealed class LocalShortcutsTests
     [InlineData(LocalShortcutKey.Delete, LocalShortcutModifiers.None, LocalShortcut.RemoveSelectedWidget)]
     [InlineData(LocalShortcutKey.D, LocalShortcutModifiers.Control, LocalShortcut.DuplicateSelectedWidget)]
     [InlineData(LocalShortcutKey.G, LocalShortcutModifiers.Control, LocalShortcut.ToggleSnap)]
+    [InlineData(LocalShortcutKey.Z, LocalShortcutModifiers.Control, LocalShortcut.Undo)]
+    [InlineData(LocalShortcutKey.Y, LocalShortcutModifiers.Control, LocalShortcut.Redo)]
     public void TryResolve_FixedGestures_MapToTheirCommand(
         LocalShortcutKey key,
         LocalShortcutModifiers modifiers,
@@ -39,6 +41,8 @@ public sealed class LocalShortcutsTests
     [InlineData(LocalShortcutKey.D, LocalShortcutModifiers.Alt)]
     [InlineData(LocalShortcutKey.G, LocalShortcutModifiers.None)]
     [InlineData(LocalShortcutKey.G, LocalShortcutModifiers.Control | LocalShortcutModifiers.Win)]
+    [InlineData(LocalShortcutKey.Z, LocalShortcutModifiers.None)]
+    [InlineData(LocalShortcutKey.Y, LocalShortcutModifiers.Control | LocalShortcutModifiers.Shift)]
     public void TryResolve_ModifierMismatch_DoesNotResolve(
         LocalShortcutKey key,
         LocalShortcutModifiers modifiers)

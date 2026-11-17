@@ -99,10 +99,12 @@ public sealed class EditModeService : INotifyPropertyChanged
     private const double PlacementGridStep = 8;
 
     private readonly PanelConfig _config;
-    private readonly PageViewModel _page;
+    private PageViewModel _page;
     private readonly IConfigStore _configStore;
     private readonly IWidgetViewModelFactory? _factory;
     private readonly IWidgetPaletteSource? _palette;
+    private readonly Func<PanelConfig, PageViewModel?>? _pageRebuilder;
+    private readonly EditHistory _history = new();
     private readonly ILogger _logger;
     private readonly IUserNotifier? _notifier;
     private bool _isEditMode;
@@ -149,6 +151,12 @@ public sealed class EditModeService : INotifyPropertyChanged
     /// chosen without hand-editing it (user-requested addition); optional, so display-only callers
     /// can hand-edit the path.
     /// </param>
+    /// <param name="pageRebuilder">
+    /// Optional composition-root seam used by undo/redo to adopt a freshly rebuilt page view model
+    /// (window data context, active-page bookkeeping). When omitted, the service rebuilds the page
+    /// itself through <paramref name="factory"/>; when neither is available, undo/redo restores the
+    /// configuration but reports that the live page could not be rebuilt.
+    /// </param>
     /// <exception cref="ArgumentNullException">Thrown when a required dependency is <see langword="null"/>.</exception>
     public EditModeService(
         PanelConfig config,
@@ -161,7 +169,8 @@ public sealed class EditModeService : INotifyPropertyChanged
         IExecutablePicker? executablePicker = null,
         IClockCultureSource? clockCulture = null,
         ISensorCatalog? sensorCatalog = null,
-        IImageFilePicker? imageFilePicker = null)
+        IImageFilePicker? imageFilePicker = null,
+        Func<PanelConfig, PageViewModel?>? pageRebuilder = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(page);
@@ -170,6 +179,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         _config = config;
         _page = page;
         _configStore = configStore;
+        _pageRebuilder = pageRebuilder;
         _logger = (logger ?? Log.Logger).ForContext<EditModeService>();
         _notifier = notifier;
         _factory = factory;
@@ -208,6 +218,31 @@ public sealed class EditModeService : INotifyPropertyChanged
     /// underlying commands re-check the same condition.
     /// </summary>
     public bool CanModifySelection => _isEditMode && _selectedWidget is not null;
+
+    /// <summary>
+    /// Gets a value indicating whether the current edit session has a change that can be undone
+    /// (user-requested undo/redo). Always <see langword="false"/> outside edit mode; drives the
+    /// toolbar buttons' enabled state and the <c>Ctrl+Z</c> local shortcut.
+    /// </summary>
+    public bool CanUndo => _isEditMode && _history.CanUndo;
+
+    /// <summary>
+    /// Gets a value indicating whether an undone change can be re-applied (user-requested
+    /// undo/redo). Always <see langword="false"/> outside edit mode; drives the toolbar buttons'
+    /// enabled state and the <c>Ctrl+Y</c> local shortcut.
+    /// </summary>
+    public bool CanRedo => _isEditMode && _history.CanRedo;
+
+    /// <summary>
+    /// Gets the number of undo steps available in the current edit session (bounded to
+    /// <see cref="EditHistory.DefaultCapacity"/>). Exposed for deterministic tests and diagnostics.
+    /// </summary>
+    public int UndoDepth => _history.UndoCount;
+
+    /// <summary>
+    /// Gets the number of redo steps available in the current edit session.
+    /// </summary>
+    public int RedoDepth => _history.RedoCount;
 
     /// <summary>
     /// Gets a value indicating whether the inline "Are you sure?" delete confirmation is open
@@ -299,6 +334,10 @@ public sealed class EditModeService : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsSnapEnabled));
         OnPropertyChanged(nameof(IsEditMode));
         OnPropertyChanged(nameof(CanModifySelection));
+
+        // User-requested undo/redo: history is per edit session, so entering starts from the
+        // current page state and discards anything from a previous session.
+        ResetHistory();
     }
 
     /// <summary>
@@ -445,6 +484,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         }
 
         SetDirty(true);
+        RecordUndoPoint();
     }
 
     /// <summary>
@@ -466,7 +506,13 @@ public sealed class EditModeService : INotifyPropertyChanged
             return false;
         }
 
-        return ApplyGeometry(widget, ClampMove(x, y, widget.Width, widget.Height, _pageWidth, _pageHeight));
+        if (!ApplyGeometry(widget, ClampMove(x, y, widget.Width, widget.Height, _pageWidth, _pageHeight)))
+        {
+            return false;
+        }
+
+        RecordUndoPoint();
+        return true;
     }
 
     /// <summary>
@@ -550,9 +596,15 @@ public sealed class EditModeService : INotifyPropertyChanged
 
     /// <summary>
     /// Marks the end of a drag gesture (RF-044/M2-RF-444): guides are rendered only while dragging
-    /// and are never persisted, so they are cleared here. Releasing a drag does not change geometry.
+    /// and are never persisted, so they are cleared here. Releasing a drag does not change geometry;
+    /// the whole gesture becomes a single undo step (user-requested undo/redo) when it moved or
+    /// resized the widget, instead of one step per drag delta.
     /// </summary>
-    public void EndDrag() => SetGuides([]);
+    public void EndDrag()
+    {
+        SetGuides([]);
+        RecordUndoPoint();
+    }
 
     /// <summary>
     /// Resizes a widget, clamped to the page bounds and the 40 DIP minimum (RF-039). The position
@@ -573,7 +625,13 @@ public sealed class EditModeService : INotifyPropertyChanged
             return false;
         }
 
-        return ApplyGeometry(widget, ClampResize(widget.X, widget.Y, width, height, _pageWidth, _pageHeight));
+        if (!ApplyGeometry(widget, ClampResize(widget.X, widget.Y, width, height, _pageWidth, _pageHeight)))
+        {
+            return false;
+        }
+
+        RecordUndoPoint();
+        return true;
     }
 
     /// <summary>
@@ -636,7 +694,13 @@ public sealed class EditModeService : INotifyPropertyChanged
             widget.Height,
             _pageWidth,
             _pageHeight);
-        return ApplyGeometry(widget, geometry);
+        if (!ApplyGeometry(widget, geometry))
+        {
+            return false;
+        }
+
+        RecordUndoPoint();
+        return true;
     }
 
     /// <summary>
@@ -721,6 +785,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         page.Widgets.Remove(config);
         SetDirty(true);
         OnPropertyChanged(nameof(Widgets));
+        RecordUndoPoint();
         _logger.Information("Edit mode: removed the selected widget. WidgetId={WidgetId}", widget.WidgetId);
         return true;
     }
@@ -863,6 +928,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         OpenPropertyEditor();
         SetDirty(true);
         OnPropertyChanged(nameof(Widgets));
+        RecordUndoPoint();
         _logger.Information(
             "Edit mode: duplicated the selected widget. SourceId={SourceId} NewId={NewId}",
             source.Id,
@@ -955,6 +1021,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         OpenPropertyEditor();
         SetDirty(true);
         OnPropertyChanged(nameof(Widgets));
+        RecordUndoPoint();
         _logger.Information(
             "Edit mode: added a widget. Type={WidgetType} WidgetId={WidgetId} X={X} Y={Y} Width={Width} Height={Height}",
             type,
@@ -1270,6 +1337,10 @@ public sealed class EditModeService : INotifyPropertyChanged
             SelectWidget(null);
             CancelRemove();
             OnPropertyChanged(nameof(IsEditMode));
+
+            // User-requested undo/redo: the history is per edit session and is discarded on exit;
+            // the layout itself stays as edited (and dirty) for the normal save-on-exit path.
+            ResetHistory();
         }
 
         return await SaveAsync(cancellationToken).ConfigureAwait(false);
@@ -1329,6 +1400,278 @@ public sealed class EditModeService : INotifyPropertyChanged
         SetDirty(false);
         _logger.Information("Edit mode: the layout was saved. PageId={PageId} Widgets={WidgetCount}", page.Id, _page.Widgets.Count);
         return new EditModeSaveResult { Attempted = true, Succeeded = true };
+    }
+
+    /// <summary>
+    /// Restores the previous page state from the bounded edit-session history (user-requested
+    /// undo/redo). The snapshot is written back into the active page configuration, the page view
+    /// model is rebuilt through the existing apply/attach path, and the service stays in edit mode
+    /// with the selection preserved by widget id when that widget still exists. The layout is marked
+    /// dirty so the normal save-on-exit persists the restored state; no action is executed.
+    /// </summary>
+    /// <returns><see langword="true"/> when a state was restored.</returns>
+    public bool TryUndo()
+    {
+        if (!_isEditMode || !_history.TryPeekUndo(out var snapshot))
+        {
+            return false;
+        }
+
+        if (!TryRestoreSnapshot(snapshot))
+        {
+            return false;
+        }
+
+        _history.ApplyUndo();
+        NotifyHistoryChanged();
+        _logger.Information("Edit mode: undo restored the previous layout. UndoDepth={UndoDepth} RedoDepth={RedoDepth}", _history.UndoCount, _history.RedoCount);
+        return true;
+    }
+
+    /// <summary>
+    /// Re-applies a state that was undone (user-requested undo/redo): the page configuration is
+    /// restored and the page view model rebuilt exactly like <see cref="TryUndo"/>, the layout is
+    /// marked dirty, and edit mode stays active. No action is executed.
+    /// </summary>
+    /// <returns><see langword="true"/> when a state was restored.</returns>
+    public bool TryRedo()
+    {
+        if (!_isEditMode || !_history.TryPeekRedo(out var snapshot))
+        {
+            return false;
+        }
+
+        if (!TryRestoreSnapshot(snapshot))
+        {
+            return false;
+        }
+
+        _history.ApplyRedo();
+        NotifyHistoryChanged();
+        _logger.Information("Edit mode: redo re-applied the layout. UndoDepth={UndoDepth} RedoDepth={RedoDepth}", _history.UndoCount, _history.RedoCount);
+        return true;
+    }
+
+    /// <summary>
+    /// Starts a fresh undo/redo session for the current edit-mode state; called on enter and exit so
+    /// history never crosses sessions. The baseline snapshot is captured so the first edit has a
+    /// state to restore to.
+    /// </summary>
+    private void ResetHistory()
+    {
+        _history.Reset(_isEditMode ? CapturePageSnapshot() : null);
+        NotifyHistoryChanged();
+    }
+
+    /// <summary>
+    /// Records the current page state as a new undo step after a committed edit. Identical states
+    /// (for example an idempotent property apply or a drag without movement) are ignored, and a new
+    /// edit clears the redo stack.
+    /// </summary>
+    /// <returns><see langword="true"/> when an undo step was created.</returns>
+    private bool RecordUndoPoint()
+    {
+        if (!_isEditMode)
+        {
+            return false;
+        }
+
+        var snapshot = CapturePageSnapshot();
+        if (snapshot is null || !_history.Record(snapshot))
+        {
+            return false;
+        }
+
+        NotifyHistoryChanged();
+        return true;
+    }
+
+    private void NotifyHistoryChanged()
+    {
+        OnPropertyChanged(nameof(CanUndo));
+        OnPropertyChanged(nameof(CanRedo));
+        OnPropertyChanged(nameof(UndoDepth));
+        OnPropertyChanged(nameof(RedoDepth));
+    }
+
+    /// <summary>
+    /// Captures the edited page as a canonical JSON snapshot (user-requested undo/redo): the page
+    /// configuration is cloned through <see cref="ConfigJson"/> and the live widget geometry is
+    /// overlaid, because moves and resizes update the view models and are only written back into the
+    /// configuration at save time. Returns <see langword="null"/> when the page is not part of the
+    /// configuration or the snapshot cannot be produced (isolation, RF-012).
+    /// </summary>
+    /// <returns>The serialized page snapshot, or <see langword="null"/> when unavailable.</returns>
+    private string? CapturePageSnapshot()
+    {
+        if (!TryGetPageConfig(out var page))
+        {
+            return null;
+        }
+
+        try
+        {
+            var json = JsonSerializer.Serialize(page, ConfigJson.Options);
+            var clone = JsonSerializer.Deserialize<PageConfig>(json, ConfigJson.Options);
+            if (clone is null)
+            {
+                return null;
+            }
+
+            foreach (var widget in _page.Widgets)
+            {
+                var config = clone.Widgets.Find(candidate =>
+                    string.Equals(candidate.Id, widget.WidgetId, StringComparison.Ordinal));
+                if (config is null)
+                {
+                    continue;
+                }
+
+                config.X = widget.X;
+                config.Y = widget.Y;
+                config.Width = widget.Width;
+                config.Height = widget.Height;
+            }
+
+            return JsonSerializer.Serialize(clone, ConfigJson.Options);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Edit mode: capturing an undo snapshot failed; the edit is not undoable");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Restores a page snapshot into the live configuration and rebuilds the page view model through
+    /// the existing factory/attach path (user-requested undo/redo). The active page object is mutated
+    /// in place, so the configuration the single-writer store serializes is the one that gets saved;
+    /// the rebuilt page replaces the old one and stays in edit mode. Selection is preserved by
+    /// widget id when possible and cleared deterministically otherwise; the transient property editor
+    /// is closed because it points at the replaced configuration entries.
+    /// </summary>
+    /// <param name="snapshot">The serialized page snapshot to restore.</param>
+    /// <returns><see langword="true"/> when the configuration and the live page were restored.</returns>
+    private bool TryRestoreSnapshot(string snapshot)
+    {
+        if (_pageRebuilder is null && _factory is null)
+        {
+            _logger.Warning("Edit mode: undo/redo is unavailable because the page cannot be rebuilt");
+            return false;
+        }
+
+        if (!TryGetPageConfig(out var page))
+        {
+            return false;
+        }
+
+        PageConfig? restored;
+        try
+        {
+            restored = JsonSerializer.Deserialize<PageConfig>(snapshot, ConfigJson.Options);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Edit mode: reading an undo snapshot failed; the layout was left unchanged");
+            return false;
+        }
+
+        if (restored is null || !string.Equals(restored.Id, page.Id, StringComparison.Ordinal))
+        {
+            _logger.Warning("Edit mode: the undo snapshot does not describe the edited page; the layout was left unchanged");
+            return false;
+        }
+
+        var selectedId = _selectedWidget?.WidgetId;
+
+        // Transient overlay state for the old page is closed first: the property editor holds the
+        // configuration entries that this restore replaces.
+        SelectWidget(null);
+        SetGuides([]);
+
+        page.Widgets.Clear();
+        page.Widgets.AddRange(restored.Widgets);
+        page.Name = restored.Name;
+
+        PageViewModel rebuilt;
+        try
+        {
+            rebuilt = _pageRebuilder is not null
+                ? _pageRebuilder(_config) ?? throw new InvalidOperationException("The page rebuilder returned no page.")
+                : new PageViewModel(page, _factory!);
+        }
+        catch (Exception ex)
+        {
+            // Keep the configuration and the rendered page in step (RF-012/RF-013): re-apply the
+            // state the page was showing before the failed restore.
+            _logger.Error(ex, "Edit mode: rebuilding the page for undo/redo failed; the layout was left unchanged");
+            ReapplyCurrentPageConfig(page);
+            return false;
+        }
+
+        var previous = _page;
+        _page = rebuilt;
+
+        foreach (var widget in rebuilt.Widgets)
+        {
+            widget.SetEditMode(true);
+        }
+
+        // The composition root's rebuilder may already have disposed the previous page; disposal is
+        // idempotent, so this also covers the factory-only path used without a host.
+        if (!ReferenceEquals(previous, rebuilt))
+        {
+            previous.Dispose();
+        }
+
+        OnPropertyChanged(nameof(Widgets));
+        OnPropertyChanged(nameof(CanModifySelection));
+
+        if (selectedId is not null)
+        {
+            var match = rebuilt.Widgets.FirstOrDefault(widget =>
+                string.Equals(widget.WidgetId, selectedId, StringComparison.Ordinal));
+            if (match is not null)
+            {
+                SelectWidget(match);
+            }
+        }
+
+        // Undo/redo is a normal in-memory edit: the existing save-on-exit persists it (no schema
+        // change), and leaving edit mode is the only path that writes the file.
+        SetDirty(true);
+        return true;
+    }
+
+    /// <summary>
+    /// Best-effort rollback used when a page rebuild fails mid-restore: the page configuration is
+    /// re-filled from the history's current snapshot so the configuration and the still-rendered
+    /// page keep describing the same widgets.
+    /// </summary>
+    /// <param name="page">The live page configuration to re-fill.</param>
+    private void ReapplyCurrentPageConfig(PageConfig page)
+    {
+        try
+        {
+            if (_history.Current is not { } current)
+            {
+                return;
+            }
+
+            var restored = JsonSerializer.Deserialize<PageConfig>(current, ConfigJson.Options);
+            if (restored is null)
+            {
+                return;
+            }
+
+            page.Widgets.Clear();
+            page.Widgets.AddRange(restored.Widgets);
+            page.Name = restored.Name;
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Edit mode: rolling back a failed undo/redo restore failed");
+        }
     }
 
     private bool IsEditable(WidgetViewModelBase widget) =>

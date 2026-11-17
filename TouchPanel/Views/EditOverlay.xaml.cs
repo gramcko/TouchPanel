@@ -135,6 +135,23 @@ public partial class EditOverlay : UserControl
     private void OnToggleSnapClick(object sender, RoutedEventArgs e) => Service?.ToggleSnap();
 
     /// <summary>
+    /// Restores the previous edit-mode layout state (user-requested undo/redo) through the service,
+    /// which owns the snapshot history, the page rebuild, and the dirty flag. The button is only
+    /// enabled while an undo step exists.
+    /// </summary>
+    /// <param name="sender">The Undo toolbar button.</param>
+    /// <param name="e">The click event data.</param>
+    private void OnUndoClick(object sender, RoutedEventArgs e) => Service?.TryUndo();
+
+    /// <summary>
+    /// Re-applies an undone edit-mode layout state (user-requested undo/redo) through the service.
+    /// The button is only enabled while a redo step exists.
+    /// </summary>
+    /// <param name="sender">The Redo toolbar button.</param>
+    /// <param name="e">The click event data.</param>
+    private void OnRedoClick(object sender, RoutedEventArgs e) => Service?.TryRedo();
+
+    /// <summary>
     /// Adds a widget of the tapped palette type (RF-043/M2-RF-431). The palette item carries its
     /// config <c>type</c> in <see cref="FrameworkElement.Tag"/>; placement, id generation, and the
     /// live/selection/dirty updates are owned by the bound <see cref="EditModeService"/>.

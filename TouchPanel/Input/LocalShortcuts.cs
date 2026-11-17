@@ -31,6 +31,12 @@ public enum LocalShortcut
 
     /// <summary>Toggles the edit-mode grid snap for the current session (M2-RF-603).</summary>
     ToggleSnap,
+
+    /// <summary>Restores the previous edit-mode layout state (user-requested undo/redo).</summary>
+    Undo,
+
+    /// <summary>Re-applies an undone edit-mode layout state (user-requested undo/redo).</summary>
+    Redo,
 }
 
 /// <summary>
@@ -44,7 +50,7 @@ public enum LocalShortcutModifiers
     /// <summary>No modifier held (Esc, the arrow keys, Delete).</summary>
     None = 0,
 
-    /// <summary>Ctrl is held (Ctrl+D duplicate, Ctrl+G toggle snap).</summary>
+    /// <summary>Ctrl is held (Ctrl+D duplicate, Ctrl+G toggle snap, Ctrl+Z undo, Ctrl+Y redo).</summary>
     Control = 1,
 
     /// <summary>Shift is held.</summary>
@@ -89,6 +95,12 @@ public enum LocalShortcutKey
 
     /// <summary>The G key (Ctrl+G toggles snap).</summary>
     G,
+
+    /// <summary>The Z key (Ctrl+Z undoes an edit-mode change).</summary>
+    Z,
+
+    /// <summary>The Y key (Ctrl+Y redoes an undone edit-mode change).</summary>
+    Y,
 }
 
 /// <summary>
@@ -99,9 +111,9 @@ public enum LocalShortcutKey
 /// </summary>
 /// <remarks>
 /// The fixed set is layered on the M1 keys (Esc exit, arrow nudge) and adds remove (Delete),
-/// duplicate (Ctrl+D), and toggle snap (Ctrl+G). All of them are only meaningful while edit mode is
-/// active; the caller gates on <c>EditModeService.IsEditMode</c> so they are inert in normal mode
-/// (M2-RF-602/M2-RF-604).
+/// duplicate (Ctrl+D), toggle snap (Ctrl+G), and undo/redo (Ctrl+Z / Ctrl+Y). All of them are only
+/// meaningful while edit mode is active; the caller gates on <c>EditModeService.IsEditMode</c> so
+/// they are inert in normal mode (M2-RF-602/M2-RF-604).
 /// </remarks>
 public static class LocalShortcuts
 {
@@ -144,6 +156,12 @@ public static class LocalShortcuts
                 return true;
             case LocalShortcutKey.G when modifiers == LocalShortcutModifiers.Control:
                 shortcut = LocalShortcut.ToggleSnap;
+                return true;
+            case LocalShortcutKey.Z when modifiers == LocalShortcutModifiers.Control:
+                shortcut = LocalShortcut.Undo;
+                return true;
+            case LocalShortcutKey.Y when modifiers == LocalShortcutModifiers.Control:
+                shortcut = LocalShortcut.Redo;
                 return true;
             default:
                 return false;
