@@ -14,6 +14,9 @@ public sealed class ThemeAppearanceDefaultsTests
     [InlineData(ThemeIds.Dark)]
     [InlineData(ThemeIds.Light)]
     [InlineData(ThemeIds.HighContrast)]
+    [InlineData(ThemeIds.Midnight)]
+    [InlineData(ThemeIds.Nord)]
+    [InlineData(ThemeIds.Oled)]
     public void EveryTheme_HasInBoundsValues(string themeId)
     {
         var defaults = ThemeAppearanceDefaults.For(themeId);
@@ -63,5 +66,20 @@ public sealed class ThemeAppearanceDefaultsTests
             Assert.True(ThemeAppearanceDefaults.TryGet(themeId, out var defaults));
             Assert.NotNull(defaults);
         }
+    }
+
+    [Theory]
+    [InlineData(ThemeIds.Midnight)]
+    [InlineData(ThemeIds.Nord)]
+    [InlineData(ThemeIds.Oled)]
+    public void NewThemes_ProvideTheirOwnDefaults_NotTheDarkValues(string themeId)
+    {
+        var defaults = ThemeAppearanceDefaults.For(themeId);
+        var dark = ThemeAppearanceDefaults.For(ThemeIds.Dark);
+
+        Assert.NotEqual(dark.Foreground, defaults.Foreground);
+        Assert.NotEqual(dark.Background, defaults.Background);
+        Assert.NotEqual(dark.Accent, defaults.Accent);
+        Assert.NotEqual(ThemeAppearanceDefaults.Dark, defaults);
     }
 }

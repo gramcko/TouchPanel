@@ -6,10 +6,10 @@ using TouchPanel.Config;
 using TouchPanel.Services.Config;
 using TouchPanel.Theme;
 
-namespace TouchPanel.ViewModels.Hotkeys;
+namespace TouchPanel.ViewModels.Settings;
 
 /// <summary>
-/// Presentation state for the "Appearance" section of the M3 editor window (M3-RF-850). It exposes
+/// Presentation state for the "Appearance" section of the settings window (M3-RF-850). It exposes
 /// the built-in theme and icon-pack allowlists plus an accent color field, validates the entries
 /// with the same rules the configuration validator uses, and persists/applies through the existing
 /// single-writer <see cref="ISettingsService"/> path (no new persistence mechanism). Theme and pack

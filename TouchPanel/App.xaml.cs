@@ -1791,8 +1791,9 @@ public partial class App : Application, IPanelConfigApplyTarget
     /// activating surface apart from edit mode (M2-RF-924): it is created only in response to an
     /// explicit tray selection and never changes the panel's normal no-activate behavior. The window
     /// is built over the running configuration, the single-writer store, the shared apply pipeline,
-    /// the M1 start-with-Windows registration, the existing import/export service, and the existing
-    /// monitor enumerator. A failure is isolated and notified (M2-RF-925).
+    /// the M1 start-with-Windows registration, the existing import/export service, the existing
+    /// monitor enumerator, and the appearance editor (theme / icon pack / accent, M3-RF-850). A
+    /// failure is isolated and notified (M2-RF-925).
     /// </summary>
     private void OpenSettings()
     {
@@ -1846,7 +1847,15 @@ public partial class App : Application, IPanelConfigApplyTarget
                     _logger);
             }
 
-            var window = new SettingsWindow(settingsViewModel, pickerViewModel, pagesViewModel);
+            // M3-RF-850: the Appearance section shares the same single-writer coordinator as every
+            // other settings-family editor; a selection applies live through the apply pipeline's
+            // appearance step.
+            var appearanceViewModel = new AppearanceEditorViewModel(
+                settings,
+                () => Config?.Appearance,
+                _logger);
+
+            var window = new SettingsWindow(settingsViewModel, pickerViewModel, pagesViewModel, appearanceViewModel);
             window.Closed += (_, _) => _settingsWindow = null;
             _settingsWindow = window;
 
@@ -1906,21 +1915,13 @@ public partial class App : Application, IPanelConfigApplyTarget
 
             var model = new HotkeyEditorModel(config.Hotkeys);
 
-            // M3-RF-850: the "Appearance" section shares the same single-writer coordinator; a
-            // selection applies live through the apply pipeline's appearance step.
-            var appearance = new AppearanceEditorViewModel(
-                settings,
-                () => Config?.Appearance,
-                _logger);
-
             var viewModel = new HotkeysEditorViewModel(
                 model,
                 settings,
                 Notifier,
                 hotkeysAvailable: _hotKeyService is not null,
                 reloadSource: () => Config?.Hotkeys ?? [],
-                logger: _logger,
-                appearance: appearance);
+                logger: _logger);
 
             var window = new HotkeysEditorWindow(viewModel);
             window.Closed += (_, _) => _hotkeysEditorWindow = null;

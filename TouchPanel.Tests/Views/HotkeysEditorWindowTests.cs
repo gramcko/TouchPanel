@@ -6,7 +6,6 @@ using TouchPanel.Config;
 using TouchPanel.Input;
 using TouchPanel.Services.Notifications;
 using TouchPanel.Tests.TestSupport;
-using TouchPanel.Theme;
 using TouchPanel.ViewModels.Hotkeys;
 using TouchPanel.Views.Hotkeys;
 
@@ -106,65 +105,6 @@ public sealed class HotkeysEditorWindowTests
         });
 
         Assert.Equal(Visibility.Collapsed, visible);
-    }
-
-    [Fact]
-    public async Task HotkeysEditorWindow_ExposesTheTouchAppearanceSection()
-    {
-        using var sta = new StaThread();
-
-        var result = await sta.InvokeAsync(() =>
-        {
-            var (logger, _) = TestLoggerFactory.Create();
-            var settings = new FakeSettingsService();
-            var appearance = new AppearanceEditorViewModel(
-                settings,
-                () => new AppearanceConfig { Theme = "dark" },
-                logger);
-            var viewModel = new HotkeysEditorViewModel(
-                new HotkeyEditorModel([]),
-                settings,
-                new RecordingNotifier(),
-                hotkeysAvailable: true,
-                logger: logger,
-                appearance: appearance);
-
-            var window = new HotkeysEditorWindow(viewModel);
-            try
-            {
-                window.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-
-                var section = Assert.IsType<StackPanel>(window.FindName("AppearanceSection"));
-                var theme = Assert.IsType<ComboBox>(window.FindName("ThemeSelector"));
-                var pack = Assert.IsType<ComboBox>(window.FindName("IconPackSelector"));
-                var accent = Assert.IsType<TextBox>(window.FindName("AccentTextBox"));
-                var setAccent = Assert.IsType<Button>(window.FindName("SetAccentButton"));
-                var clearAccent = Assert.IsType<Button>(window.FindName("ClearAccentButton"));
-
-                return new
-                {
-                    SectionVisible = section.Visibility == Visibility.Visible,
-                    ThemeCount = theme.Items.Count,
-                    PackCount = pack.Items.Count,
-                    AccentHeight = accent.MinHeight,
-                    SetAccentHeight = setAccent.MinHeight,
-                    ClearAccentHeight = clearAccent.MinHeight,
-                };
-            }
-            finally
-            {
-                window.Close();
-            }
-        });
-
-        Assert.True(result.SectionVisible);
-        Assert.Equal(ThemeIds.All.Count, result.ThemeCount);
-        Assert.Equal(IconPackIds.All.Count, result.PackCount);
-
-        // M3-RF-850/RF-025: the appearance affordances meet the 40 DIP touch minimum.
-        Assert.True(result.AccentHeight >= 40);
-        Assert.True(result.SetAccentHeight >= 40);
-        Assert.True(result.ClearAccentHeight >= 40);
     }
 
     private static HotkeysEditorViewModel CreateViewModel(bool hotkeysAvailable)

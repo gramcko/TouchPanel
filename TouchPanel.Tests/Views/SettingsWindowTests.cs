@@ -4,6 +4,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
 using TouchPanel.Config;
 using TouchPanel.Tests.TestSupport;
+using TouchPanel.Theme;
 using TouchPanel.ViewModels.Settings;
 using TouchPanel.Views.MonitorPicker;
 using TouchPanel.Views.Settings;
@@ -12,9 +13,10 @@ namespace TouchPanel.Tests.Views;
 
 /// <summary>
 /// Settings-window wiring (T-17, RF-092/M2-RF-921..924): the window is an ordinary activating window
-/// (deliberate user action), exposes the M2 affordances at the touch minimum, and embeds the monitor
-/// picker bound to its view model. The XAML is instantiated on an STA thread but never shown, so no
-/// desktop state is touched; the real live behavior is verified manually (MV-M2-07).
+/// (deliberate user action), exposes the M2 affordances and the appearance editor (M3-RF-850) at the
+/// touch minimum, and embeds the monitor picker bound to its view model. The XAML is instantiated on
+/// an STA thread but never shown, so no desktop state is touched; the real live behavior is verified
+/// manually (MV-M2-07).
 /// </summary>
 public sealed class SettingsWindowTests
 {
@@ -100,7 +102,60 @@ public sealed class SettingsWindowTests
         Assert.Equal(2, itemCount);
     }
 
-    private static SettingsWindow CreateWindow(out MonitorPickerView pickerView)
+    [Fact]
+    public async Task SettingsWindow_ExposesTheTouchAppearanceSection()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var appearance = CreateAppearance();
+            var window = CreateWindow(out _, appearance);
+            try
+            {
+                window.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+                var section = Assert.IsType<StackPanel>(window.FindName("AppearanceEditor"));
+                var theme = Assert.IsType<ComboBox>(window.FindName("ThemeSelector"));
+                var pack = Assert.IsType<ComboBox>(window.FindName("IconPackSelector"));
+                var accent = Assert.IsType<TextBox>(window.FindName("AccentTextBox"));
+                var setAccent = Assert.IsType<Button>(window.FindName("SetAccentButton"));
+                var clearAccent = Assert.IsType<Button>(window.FindName("ClearAccentButton"));
+
+                return new
+                {
+                    SectionVisible = section.Visibility == Visibility.Visible,
+                    BoundToViewModel = ReferenceEquals(section.DataContext, appearance),
+                    ThemeCount = theme.Items.Count,
+                    PackCount = pack.Items.Count,
+                    SelectedTheme = theme.SelectedItem as string,
+                    AccentHeight = accent.MinHeight,
+                    SetAccentHeight = setAccent.MinHeight,
+                    ClearAccentHeight = clearAccent.MinHeight,
+                };
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        // M3-RF-850: the appearance editor now lives on the settings surface.
+        Assert.True(result.SectionVisible);
+        Assert.True(result.BoundToViewModel);
+        Assert.Equal(ThemeIds.All.Count, result.ThemeCount);
+        Assert.Equal(IconPackIds.All.Count, result.PackCount);
+        Assert.Equal("dark", result.SelectedTheme);
+
+        // M3-RF-850/RF-025: the appearance affordances meet the 40 DIP touch minimum.
+        Assert.True(result.AccentHeight >= 40);
+        Assert.True(result.SetAccentHeight >= 40);
+        Assert.True(result.ClearAccentHeight >= 40);
+    }
+
+    private static SettingsWindow CreateWindow(
+        out MonitorPickerView pickerView,
+        AppearanceEditorViewModel? appearance = null)
     {
         var config = DefaultConfigGenerator.Create();
         var picker = CreatePicker(out _);
@@ -111,9 +166,15 @@ public sealed class SettingsWindowTests
             new FakeConfigFilePicker(),
             "panel.json");
 
-        var window = new SettingsWindow(settings, picker);
+        var window = new SettingsWindow(settings, picker, appearance: appearance);
         pickerView = Assert.IsType<MonitorPickerView>(window.FindName("MonitorPicker"));
         return window;
+    }
+
+    private static AppearanceEditorViewModel CreateAppearance()
+    {
+        var config = DefaultConfigGenerator.Create();
+        return new AppearanceEditorViewModel(new FakeSettingsService(), () => config.Appearance);
     }
 
     private static MonitorPickerViewModel CreatePicker(out FakeMonitorEnumerator enumerator)

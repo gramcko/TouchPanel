@@ -34,6 +34,56 @@ public sealed class WidgetIconPackRefreshTests
         Assert.NotEqual(IconCatalog.GlyphFor("star"), viewModel.IconGlyph);
     }
 
+    [Theory]
+    [InlineData(IconPackIds.Outline)]
+    [InlineData(IconPackIds.Duotone)]
+    public void IconGlyph_RefreshesLiveAcrossTheNewPacks(string packId)
+    {
+        var state = new AppearanceState();
+        using var viewModel = new ButtonWidgetViewModel(new ButtonWidgetConfig
+        {
+            Id = "w6",
+            Icon = "star",
+            Width = 160,
+            Height = 60,
+        });
+
+        viewModel.AttachAppearanceSource(state);
+        var defaultGlyph = IconCatalog.GlyphFor("star");
+        Assert.Equal(defaultGlyph, viewModel.IconGlyph);
+
+        state.SetIconPack(packId);
+        Assert.Equal(packId, state.ActiveIconPackId);
+        Assert.Equal(IconPackCatalog.GlyphFor(packId, "star"), viewModel.IconGlyph);
+        Assert.NotEqual(defaultGlyph, viewModel.IconGlyph);
+
+        // Back to default: the same view model re-resolves without a rebuild.
+        state.SetIconPack(IconPackIds.Default);
+        Assert.Equal(defaultGlyph, viewModel.IconGlyph);
+    }
+
+    [Theory]
+    [InlineData(IconPackIds.Outline)]
+    [InlineData(IconPackIds.Duotone)]
+    public void ChangingFromANewPackToAnUnknownPack_FallsBackToDefaultGlyph(string packId)
+    {
+        var state = new AppearanceState();
+        using var viewModel = new ButtonWidgetViewModel(new ButtonWidgetConfig
+        {
+            Id = "w7",
+            Icon = "star",
+            Width = 160,
+            Height = 60,
+        });
+
+        viewModel.AttachAppearanceSource(state);
+        state.SetIconPack(packId);
+        state.SetIconPack("hand-drawn");
+
+        Assert.Equal(IconPackIds.Default, state.ActiveIconPackId);
+        Assert.Equal(IconCatalog.GlyphFor("star"), viewModel.IconGlyph);
+    }
+
     [Fact]
     public void ChangingToAnUnknownPack_FallsBackToDefaultGlyph()
     {

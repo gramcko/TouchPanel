@@ -18,10 +18,10 @@ namespace TouchPanel.Tests.Views;
 
 /// <summary>
 /// Canonical UI surface map (M4-RF-921/M4-RF-960/D-M4-7, AC-M4-08): each promoted concern is
-/// hosted by exactly one surface. The settings window does not host hotkey or appearance editing,
-/// and the hotkeys/appearance editor does not host startup/interval/monitor/import-export; the tray
-/// menu hosts exactly the six documented commands. These assertions guard against duplicate or
-/// competing editors without touching the delivered UI.
+/// hosted by exactly one surface. The settings window hosts appearance editing but does not host
+/// hotkey editing, and the hotkeys editor hosts hotkeys only (no startup/interval/monitor/
+/// import-export or appearance); the tray menu hosts exactly the six documented commands. These
+/// assertions guard against duplicate or competing editors without touching the delivered UI.
 /// </summary>
 /// <remarks>
 /// <para><b>Automatic/runtime behaviors require no user surface (M4-RF-964).</b> The following
@@ -40,9 +40,11 @@ public sealed class SurfaceOwnershipTests
     // ---- Surface ownership: the view models expose no cross-surface concern ----
 
     [Fact]
-    public void SettingsViewModel_ExposesNoHotkeyOrAppearanceEditing()
+    public void SettingsViewModel_ExposesNoHotkeyEditing()
     {
-        var forbidden = new[] { "hotkey", "appearance", "theme", "iconpack", "accent" };
+        // Appearance is hosted by SettingsWindow through the nested AppearanceEditorViewModel, so the
+        // settings surface owns it; hotkey editing remains exclusive to the hotkeys editor.
+        var forbidden = new[] { "hotkey" };
 
         var members = PublicMemberNames(typeof(SettingsViewModel));
 
@@ -57,7 +59,7 @@ public sealed class SurfaceOwnershipTests
         var forbidden = new[]
         {
             "alwaysontop", "startwithwindows", "pollinterval", "monitor", "import", "export",
-            "configpath", "schemaversion",
+            "configpath", "schemaversion", "appearance", "theme", "iconpack", "accent",
         };
 
         var members = PublicMemberNames(typeof(HotkeysEditorViewModel));
@@ -70,7 +72,7 @@ public sealed class SurfaceOwnershipTests
     // ---- Surface ownership: the built XAML hosts no cross-surface controls ----
 
     [Fact]
-    public async Task SettingsWindow_HostsNoHotkeyOrAppearanceControls()
+    public async Task SettingsWindow_HostsAppearanceButNoHotkeyControls()
     {
         using var sta = new StaThread();
 
@@ -83,6 +85,14 @@ public sealed class SurfaceOwnershipTests
 
                 return (
                     HasSettingsSurface: window.FindName("AlwaysOnTopCheckBox") is not null,
+                    Appearance: FoundNames(
+                        window,
+                        "AppearanceEditor",
+                        "ThemeSelector",
+                        "IconPackSelector",
+                        "AccentTextBox",
+                        "SetAccentButton",
+                        "ClearAccentButton"),
                     Forbidden: FoundNames(
                         window,
                         "HotkeyList",
@@ -90,12 +100,7 @@ public sealed class SurfaceOwnershipTests
                         "ActionTypeSelector",
                         "ActionPathText",
                         "NewButton",
-                        "SaveEntryButton",
-                        "ThemeSelector",
-                        "IconPackSelector",
-                        "AccentTextBox",
-                        "SetAccentButton",
-                        "AppearanceSection"));
+                        "SaveEntryButton"));
             }
             finally
             {
@@ -104,11 +109,12 @@ public sealed class SurfaceOwnershipTests
         });
 
         Assert.True(result.HasSettingsSurface, "The settings surface should be present and found by name.");
+        Assert.Equal(6, result.Appearance.Count);
         Assert.Empty(result.Forbidden);
     }
 
     [Fact]
-    public async Task HotkeysEditorWindow_HostsNoSettingsWindowControls()
+    public async Task HotkeysEditorWindow_HostsNoSettingsOrAppearanceControls()
     {
         using var sta = new StaThread();
 
@@ -131,7 +137,13 @@ public sealed class SurfaceOwnershipTests
                         "ExportButton",
                         "MonitorPicker",
                         "ConfigPathText",
-                        "SchemaVersionText"));
+                        "SchemaVersionText",
+                        "AppearanceEditor",
+                        "ThemeSelector",
+                        "IconPackSelector",
+                        "AccentTextBox",
+                        "SetAccentButton",
+                        "ClearAccentButton"));
             }
             finally
             {
@@ -207,7 +219,10 @@ public sealed class SurfaceOwnershipTests
             importExport: null,
             new FakeConfigFilePicker(),
             "panel.json");
-        return new SettingsWindow(settings, picker);
+        var appearance = new AppearanceEditorViewModel(
+            new FakeSettingsService(),
+            () => config.Appearance);
+        return new SettingsWindow(settings, picker, appearance: appearance);
     }
 
     private static HotkeysEditorWindow CreateHotkeysWindow()

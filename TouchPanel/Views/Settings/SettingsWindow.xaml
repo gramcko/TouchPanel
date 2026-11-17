@@ -18,8 +18,9 @@
         Tray-accessible settings window (T-17, RF-092/M2-RF-921). Unlike the panel, this is an
         ordinary activating window because it is a deliberate user action (M2-RF-924); opening and
         closing it never changes the panel's no-activate behavior. It edits alwaysOnTop,
-        start-with-Windows, the telemetry interval, import/export, diagnostics, and the target
-        monitor (through the embedded picker). Hotkey editing is intentionally absent (RF-061/M3).
+        start-with-Windows, the telemetry interval, appearance (theme / icon pack / accent),
+        import/export, diagnostics, and the target monitor (through the embedded picker). Hotkey
+        editing is intentionally absent (RF-061/M3); it lives in the Hotkeys… window.
     -->
 
     <Window.Resources>
@@ -118,6 +119,59 @@
                         HorizontalAlignment="Left"
                         Padding="16,6"
                         Command="{Binding ApplyIntervalCommand}" />
+
+                <!-- Appearance (M3-RF-850): theme / icon pack / accent, applied live through the
+                     shared single-writer settings path. Hidden when the window was built without an
+                     appearance editor (for example the window wiring tests). -->
+                <StackPanel x:Name="AppearanceEditor">
+                    <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" />
+
+                    <TextBlock Text="Theme" FontSize="13" Margin="0,6,0,2" />
+                    <ComboBox x:Name="ThemeSelector" MinHeight="40" FontSize="14"
+                              ItemsSource="{Binding ThemeOptions}"
+                              SelectedItem="{Binding SelectedTheme, Mode=TwoWay}" />
+
+                    <TextBlock Text="Icon pack" FontSize="13" Margin="0,6,0,2" />
+                    <ComboBox x:Name="IconPackSelector" MinHeight="40" FontSize="14"
+                              ItemsSource="{Binding IconPackOptions}"
+                              SelectedItem="{Binding SelectedIconPack, Mode=TwoWay}" />
+
+                    <TextBlock Text="Accent color (#RRGGBB or #AARRGGBB; blank = theme accent)"
+                               FontSize="13" Margin="0,6,0,2" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal">
+                        <TextBox x:Name="AccentTextBox" MinHeight="40" Width="170" FontSize="14"
+                                 Text="{Binding AccentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <Button x:Name="SetAccentButton" Content="Set accent" MinHeight="40" MinWidth="110" Padding="12,6" Margin="8,0,8,0"
+                                Command="{Binding SetAccentCommand}" />
+                        <Button x:Name="ClearAccentButton" Content="Use theme accent" MinHeight="40" MinWidth="150" Padding="12,6"
+                                Command="{Binding ClearAccentCommand}" />
+                    </StackPanel>
+
+                    <TextBlock x:Name="AccentErrorText"
+                               Foreground="{DynamicResource WidgetErrorBrush}"
+                               FontSize="12"
+                               TextWrapping="Wrap"
+                               Margin="0,4,0,0"
+                               Text="{Binding AccentError}"
+                               Visibility="{Binding HasAccentError, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                    <TextBlock x:Name="AppearanceStatusText"
+                               Text="{Binding StatusMessage}"
+                               Visibility="{Binding HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontSize" Value="13" />
+                                <Setter Property="TextWrapping" Value="Wrap" />
+                                <Setter Property="Margin" Value="0,8,0,0" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                                        <Setter Property="Foreground" Value="{DynamicResource WidgetErrorBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
 
                 <!-- Pages management (user-requested): add/rename/remove and choose the active page. -->
                 <settingsViews:PagesEditorView x:Name="PagesEditor" />

@@ -20,8 +20,6 @@ public sealed class ThemeDictionaryTests
         await sta.InvokeAsync(() =>
         {
             var darkSource = Load("/TouchPanel;component/Theme/Colors.xaml");
-            var light = Load("/TouchPanel;component/Theme/Themes/Light.xaml");
-            var highContrast = Load("/TouchPanel;component/Theme/Themes/HighContrast.xaml");
             var dark = Load("/TouchPanel;component/Theme/Themes/Dark.xaml");
 
             // The dark theme reproduces the current palette exactly (its values live in Colors.xaml
@@ -32,15 +30,16 @@ public sealed class ThemeDictionaryTests
             }
 
             // Every theme defines the same key set; only values differ.
-            foreach (var key in darkSource.Keys)
+            foreach (var themeId in ThemeIds.All)
             {
-                Assert.True(light.Contains(key), $"Light theme is missing palette key '{key}'.");
-                Assert.True(highContrast.Contains(key), $"HighContrast theme is missing palette key '{key}'.");
-            }
+                var theme = LoadTheme(themeId);
+                foreach (var key in darkSource.Keys)
+                {
+                    Assert.True(theme.Contains(key), $"Theme '{themeId}' is missing palette key '{key}'.");
+                }
 
-            Assert.Equal(ThemeIds.Dark, dark[ThemeIds.ThemeIdKey]);
-            Assert.Equal(ThemeIds.Light, light[ThemeIds.ThemeIdKey]);
-            Assert.Equal(ThemeIds.HighContrast, highContrast[ThemeIds.ThemeIdKey]);
+                Assert.Equal(themeId, theme[ThemeIds.ThemeIdKey]);
+            }
         });
     }
 
@@ -52,21 +51,52 @@ public sealed class ThemeDictionaryTests
         await sta.InvokeAsync(() =>
         {
             var dark = Load("/TouchPanel;component/Theme/Colors.xaml");
-            var light = Load("/TouchPanel;component/Theme/Themes/Light.xaml");
-            var highContrast = Load("/TouchPanel;component/Theme/Themes/HighContrast.xaml");
-
             var darkSurface = (Color)dark["WidgetSurfaceColor"];
-            var lightSurface = (Color)light["WidgetSurfaceColor"];
-            var highContrastSurface = (Color)highContrast["WidgetSurfaceColor"];
-
-            Assert.NotEqual(darkSurface, lightSurface);
-            Assert.NotEqual(darkSurface, highContrastSurface);
-            Assert.NotEqual(lightSurface, highContrastSurface);
-
             var darkBackground = (Color)dark["PanelBackgroundColor"];
-            Assert.NotEqual(darkBackground, (Color)light["PanelBackgroundColor"]);
-            Assert.NotEqual(darkBackground, (Color)highContrast["PanelBackgroundColor"]);
+
+            foreach (var themeId in ThemeIds.All.Where(id => id != ThemeIds.Dark))
+            {
+                var theme = LoadTheme(themeId);
+                Assert.NotEqual(darkSurface, (Color)theme["WidgetSurfaceColor"]);
+                Assert.NotEqual(darkBackground, (Color)theme["PanelBackgroundColor"]);
+            }
         });
+    }
+
+    [Fact]
+    public async Task NewThemes_AreReadableAgainstTheirSurfaces()
+    {
+        using var sta = new StaThread();
+
+        await sta.InvokeAsync(() =>
+        {
+            foreach (var themeId in new[] { ThemeIds.Midnight, ThemeIds.Nord, ThemeIds.Oled })
+            {
+                var theme = LoadTheme(themeId);
+                var foreground = (Color)theme["PanelForegroundColor"];
+                var surface = (Color)theme["WidgetSurfaceColor"];
+
+                // The same contrast relationship as dark/light: a light foreground on a dark surface.
+                Assert.True(
+                    RelativeLuminance(foreground) > RelativeLuminance(surface) + 0.25,
+                    $"Theme '{themeId}' foreground is not clearly lighter than its surface.");
+            }
+        });
+    }
+
+    private static ResourceDictionary LoadTheme(string themeId)
+    {
+        Assert.True(ThemeIds.TryGetResourceUri(themeId, out var uri));
+        return Assert.IsType<ResourceDictionary>(Application.LoadComponent(uri));
+    }
+
+    private static double RelativeLuminance(Color color) =>
+        (0.2126 * Channel(color.R)) + (0.7152 * Channel(color.G)) + (0.0722 * Channel(color.B));
+
+    private static double Channel(byte value)
+    {
+        var srgb = value / 255.0;
+        return srgb <= 0.03928 ? srgb / 12.92 : Math.Pow((srgb + 0.055) / 1.055, 2.4);
     }
 
     private static ResourceDictionary Load(string componentUri) =>

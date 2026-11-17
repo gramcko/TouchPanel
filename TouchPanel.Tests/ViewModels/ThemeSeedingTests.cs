@@ -21,6 +21,9 @@ public sealed class ThemeSeedingTests
     [InlineData(ThemeIds.Dark)]
     [InlineData(ThemeIds.Light)]
     [InlineData(ThemeIds.HighContrast)]
+    [InlineData(ThemeIds.Midnight)]
+    [InlineData(ThemeIds.Nord)]
+    [InlineData(ThemeIds.Oled)]
     public void AddedWidget_IsSeededFromTheActiveTheme(string themeId)
     {
         var context = CreateContext(themeId);

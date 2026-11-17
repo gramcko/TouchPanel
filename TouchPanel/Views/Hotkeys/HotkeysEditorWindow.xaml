@@ -198,59 +198,6 @@
                     <Button x:Name="RemoveButton" Content="Remove selected" MinHeight="40" MinWidth="150" Padding="16,6"
                             Command="{Binding RemoveCommand}" />
                 </StackPanel>
-
-                <!-- Appearance section (M3-RF-850): theme / accent / icon pack, applied live through
-                     the same single-writer settings path. Hidden when the editor was built without it
-                     (for example the window wiring tests). -->
-                <StackPanel x:Name="AppearanceSection"
-                            Visibility="{Binding HasAppearance, Converter={StaticResource BoolToVisibilityConverter}}">
-                    <Separator Margin="0,16,0,4" />
-                    <TextBlock Text="Appearance" Style="{StaticResource SectionHeaderStyle}" />
-
-                    <TextBlock Text="Theme" FontSize="13" Margin="0,6,0,2" />
-                    <ComboBox x:Name="ThemeSelector" MinHeight="40" FontSize="14"
-                              ItemsSource="{Binding Appearance.ThemeOptions}"
-                              SelectedItem="{Binding Appearance.SelectedTheme, Mode=TwoWay}" />
-
-                    <TextBlock Text="Icon pack" FontSize="13" Margin="0,6,0,2" />
-                    <ComboBox x:Name="IconPackSelector" MinHeight="40" FontSize="14"
-                              ItemsSource="{Binding Appearance.IconPackOptions}"
-                              SelectedItem="{Binding Appearance.SelectedIconPack, Mode=TwoWay}" />
-
-                    <TextBlock Text="Accent color (#RRGGBB or #AARRGGBB; blank = theme accent)"
-                               FontSize="13" Margin="0,6,0,2" TextWrapping="Wrap" />
-                    <StackPanel Orientation="Horizontal">
-                        <TextBox x:Name="AccentTextBox" MinHeight="40" Width="170" FontSize="14"
-                                 Text="{Binding Appearance.AccentText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                        <Button x:Name="SetAccentButton" Content="Set accent" MinHeight="40" MinWidth="110" Padding="12,6" Margin="8,0,8,0"
-                                Command="{Binding Appearance.SetAccentCommand}" />
-                        <Button x:Name="ClearAccentButton" Content="Use theme accent" MinHeight="40" MinWidth="150" Padding="12,6"
-                                Command="{Binding Appearance.ClearAccentCommand}" />
-                    </StackPanel>
-
-                    <TextBlock x:Name="AccentErrorText"
-                               Style="{StaticResource ErrorTextStyle}"
-                               Margin="0,4,0,0"
-                               Text="{Binding Appearance.AccentError}"
-                               Visibility="{Binding Appearance.HasAccentError, Converter={StaticResource BoolToVisibilityConverter}}" />
-
-                    <TextBlock x:Name="AppearanceStatusText"
-                               Text="{Binding Appearance.StatusMessage}"
-                               Visibility="{Binding Appearance.HasStatusMessage, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="FontSize" Value="13" />
-                                <Setter Property="TextWrapping" Value="Wrap" />
-                                <Setter Property="Margin" Value="0,8,0,0" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding Appearance.StatusIsError}" Value="True">
-                                        <Setter Property="Foreground" Value="{DynamicResource WidgetErrorBrush}" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                </StackPanel>
             </StackPanel>
         </ScrollViewer>
 

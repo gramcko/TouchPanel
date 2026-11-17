@@ -60,7 +60,6 @@ public sealed class HotkeysEditorViewModel : INotifyPropertyChanged
     /// <param name="hotkeysAvailable">Whether the global hotkey service is available in this session.</param>
     /// <param name="reloadSource">Optional accessor returning the currently running hotkeys, used by <see cref="ReloadFromModel"/>.</param>
     /// <param name="logger">Logger for summary-only messages; defaults to the global Serilog logger.</param>
-    /// <param name="appearance">Optional appearance selection view model shown in the editor's "Appearance" section (M3-RF-850).</param>
     /// <exception cref="ArgumentNullException">Thrown when a required dependency is <see langword="null"/>.</exception>
     public HotkeysEditorViewModel(
         HotkeyEditorModel model,
@@ -68,8 +67,7 @@ public sealed class HotkeysEditorViewModel : INotifyPropertyChanged
         IUserNotifier notifier,
         bool hotkeysAvailable,
         Func<IReadOnlyList<HotkeyConfig>>? reloadSource = null,
-        ILogger? logger = null,
-        AppearanceEditorViewModel? appearance = null)
+        ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(settings);
@@ -81,7 +79,6 @@ public sealed class HotkeysEditorViewModel : INotifyPropertyChanged
         _hotkeysAvailable = hotkeysAvailable;
         _reloadSource = reloadSource;
         _logger = (logger ?? Log.Logger).ForContext<HotkeysEditorViewModel>();
-        Appearance = appearance;
 
         KeyOptions = SendKeyCombination.FriendlyKeyNames;
         ModifierOptions = SendKeyCombination.KnownModifierNames;
@@ -122,15 +119,6 @@ public sealed class HotkeysEditorViewModel : INotifyPropertyChanged
 
     /// <summary>Gets a value indicating whether the unavailable note is shown.</summary>
     public bool HasUnavailableNote => !_hotkeysAvailable;
-
-    /// <summary>
-    /// Gets the appearance selection view model for the editor's "Appearance" section, or
-    /// <see langword="null"/> when the editor was built without one (M3-RF-850).
-    /// </summary>
-    public AppearanceEditorViewModel? Appearance { get; }
-
-    /// <summary>Gets a value indicating whether the "Appearance" section is available.</summary>
-    public bool HasAppearance => Appearance is not null;
 
     /// <summary>Gets the currently selected entry, or <see langword="null"/> when a new entry is being drafted.</summary>
     public HotkeyEditorEntry? SelectedEntry

@@ -51,6 +51,74 @@ public sealed class ThemeManagerTests
         });
     }
 
+    [Theory]
+    [InlineData(ThemeIds.Light)]
+    [InlineData(ThemeIds.HighContrast)]
+    [InlineData(ThemeIds.Midnight)]
+    [InlineData(ThemeIds.Nord)]
+    [InlineData(ThemeIds.Oled)]
+    public async Task Apply_EveryBuiltInTheme_ChangesTheRealizedWidgetBrush(string themeId)
+    {
+        using var sta = new StaThread();
+
+        await sta.InvokeAsync(() =>
+        {
+            var (logger, _) = TestLoggerFactory.Create();
+            var dark = Load("/TouchPanel;component/Theme/Themes/Dark.xaml");
+            var host = new ResourceDictionary();
+            host.MergedDictionaries.Add(dark);
+            var manager = new ThemeManager(logger, host);
+
+            var grid = new Grid { Resources = host };
+            using var viewModel = CreateButtonViewModel();
+            var button = RealizeButton(grid, viewModel);
+
+            var darkSurface = SurfaceColor(Load("/TouchPanel;component/Theme/Colors.xaml"));
+            Assert.Equal(darkSurface, BrushColor(button.Background));
+
+            Assert.True(manager.Apply(themeId));
+            grid.UpdateLayout();
+
+            var active = Assert.Single(host.MergedDictionaries);
+            Assert.Equal(themeId, active[ThemeIds.ThemeIdKey]);
+            Assert.Equal(themeId, manager.CurrentThemeId);
+
+            var themeSurface = SurfaceColor(active);
+            Assert.NotEqual(darkSurface, themeSurface);
+            Assert.Equal(themeSurface, BrushColor(button.Background));
+
+            // Switching back to the default restores the dark palette on the same widget.
+            Assert.True(manager.Apply(ThemeIds.Dark));
+            grid.UpdateLayout();
+            Assert.Equal(darkSurface, BrushColor(button.Background));
+        });
+    }
+
+    [Theory]
+    [InlineData(ThemeIds.Midnight, "solarized")]
+    [InlineData(ThemeIds.Nord, "mystery")]
+    [InlineData(ThemeIds.Oled, "not-a-theme")]
+    public async Task UnknownId_AfterANewTheme_FallsBackToDark(string themeId, string unknownId)
+    {
+        using var sta = new StaThread();
+
+        await sta.InvokeAsync(() =>
+        {
+            var (logger, _) = TestLoggerFactory.Create();
+            var host = new ResourceDictionary();
+            host.MergedDictionaries.Add(Load("/TouchPanel;component/Theme/Themes/Dark.xaml"));
+            var manager = new ThemeManager(logger, host);
+
+            Assert.True(manager.Apply(themeId));
+            Assert.Equal(themeId, manager.CurrentThemeId);
+
+            Assert.True(manager.Apply(unknownId));
+
+            Assert.Equal(ThemeIds.Dark, manager.CurrentThemeId);
+            Assert.Equal(ThemeIds.Dark, Assert.Single(host.MergedDictionaries)[ThemeIds.ThemeIdKey]);
+        });
+    }
+
     [Fact]
     public async Task Apply_UnknownId_FallsBackToDark_WithWarning()
     {

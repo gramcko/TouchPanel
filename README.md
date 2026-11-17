@@ -12,7 +12,7 @@ TouchPanel renders a configurable grid of touch widgets on a monitor of your cho
 - **Actions**: launch programs; send key combinations (e.g. `Alt+A`); media keys; volume; mute; run a hotkey.
 - **Global hotkeys** that fire while a game has focus and do not steal focus.
 - **Live telemetry** at ~1 Hz (CPU/GPU/RAM/disk/network, temperatures and fan speeds via LibreHardwareMonitor — optional), with a configurable polling interval.
-- **Themes** (dark / light / high-contrast) plus accent colour and icon packs, with per-widget appearance overrides.
+- **Themes** (dark / light / high-contrast / midnight / nord / OLED) plus accent colour and icon packs, with per-widget appearance overrides.
 - **Edit mode**: add/remove/duplicate widgets, move/resize, property and action editors with executable browse, and grid snap with alignment guides.
 - **System tray** lifecycle with Show/Hide Panel, Edit Mode, Settings…, Hotkeys…, Open Configuration Folder, and Exit.
 - **Start with Windows** (per-user, no elevation) and **single instance** (`--exit`/second launch signals the running instance).
@@ -140,7 +140,7 @@ Gauges, Bars, and Sparklines pick a **sensor from a list**. Byte/rate sensors of
 
 ### Appearance
 
-Choose a theme (dark / light / high-contrast), an accent colour, and an icon pack app-wide, with per-widget appearance overrides on top.
+Choose a theme (dark / light / high-contrast / midnight / nord / OLED), an accent colour, and an icon pack (default / filled / outline / duotone) app-wide in **Settings… → Appearance**, with per-widget appearance overrides on top.
 
 ### Configuration and logs
 

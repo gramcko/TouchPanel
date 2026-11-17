@@ -1,0 +1,33 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+
+    <!--
+        Built-in theme: `midnight`. A deep-blue variant of the default dark palette that keeps the
+        same contrast relationships (light foreground on dark surfaces) while shifting the neutrals
+        toward blue. Defines exactly the same palette key set as `Theme/Colors.xaml`/`Dark.xaml`
+        (only values differ); `ThemeId` is the stable id marker for `ThemeManager`.
+    -->
+    <sys:String x:Key="ThemeId">midnight</sys:String>
+
+    <Color x:Key="PanelBackgroundColor">#FF0B1020</Color>
+    <Color x:Key="PanelForegroundColor">#FFE8ECF8</Color>
+    <Color x:Key="PanelDisabledForegroundColor">#FF7B8499</Color>
+    <Color x:Key="PanelAccentColor">#FF6FA8FF</Color>
+    <Color x:Key="WidgetSurfaceColor">#FF161E33</Color>
+    <Color x:Key="WidgetPressedColor">#FF22304F</Color>
+    <Color x:Key="WidgetDisabledColor">#FF121828</Color>
+    <Color x:Key="WidgetBorderColor">#FF2E3B57</Color>
+    <Color x:Key="WidgetErrorColor">#FFFF6B6B</Color>
+
+    <SolidColorBrush x:Key="PanelBackgroundBrush" Color="{StaticResource PanelBackgroundColor}" />
+    <SolidColorBrush x:Key="PanelForegroundBrush" Color="{StaticResource PanelForegroundColor}" />
+    <SolidColorBrush x:Key="PanelDisabledForegroundBrush" Color="{StaticResource PanelDisabledForegroundColor}" />
+    <SolidColorBrush x:Key="PanelAccentBrush" Color="{StaticResource PanelAccentColor}" />
+    <SolidColorBrush x:Key="WidgetSurfaceBrush" Color="{StaticResource WidgetSurfaceColor}" />
+    <SolidColorBrush x:Key="WidgetPressedBrush" Color="{StaticResource WidgetPressedColor}" />
+    <SolidColorBrush x:Key="WidgetDisabledBrush" Color="{StaticResource WidgetDisabledColor}" />
+    <SolidColorBrush x:Key="WidgetBorderBrush" Color="{StaticResource WidgetBorderColor}" />
+    <SolidColorBrush x:Key="WidgetErrorBrush" Color="{StaticResource WidgetErrorColor}" />
+
+</ResourceDictionary>

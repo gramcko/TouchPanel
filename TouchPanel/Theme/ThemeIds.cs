@@ -17,6 +17,15 @@ public static class ThemeIds
     /// <summary>The high-contrast built-in theme id.</summary>
     public const string HighContrast = "highContrast";
 
+    /// <summary>The deep-blue "midnight" built-in theme id.</summary>
+    public const string Midnight = "midnight";
+
+    /// <summary>The muted blue-grey "nord" built-in theme id.</summary>
+    public const string Nord = "nord";
+
+    /// <summary>The true-black "oled" built-in theme id for OLED panels.</summary>
+    public const string Oled = "oled";
+
     /// <summary>
     /// The resource key every built-in theme dictionary uses to advertise its stable theme id.
     /// <see cref="ThemeManager"/> uses it to identify the currently merged application-level theme
@@ -25,7 +34,8 @@ public static class ThemeIds
     public const string ThemeIdKey = "ThemeId";
 
     /// <summary>The known theme ids, in a stable order (default first).</summary>
-    public static IReadOnlyList<string> All { get; } = [Dark, Light, HighContrast];
+    public static IReadOnlyList<string> All { get; } =
+        [Dark, Light, HighContrast, Midnight, Nord, Oled];
 
     private static readonly Dictionary<string, ThemeDescriptor> Descriptors =
         new(StringComparer.OrdinalIgnoreCase)
@@ -33,6 +43,9 @@ public static class ThemeIds
             [Dark] = new(Dark, "Theme/Themes/Dark.xaml"),
             [Light] = new(Light, "Theme/Themes/Light.xaml"),
             [HighContrast] = new(HighContrast, "Theme/Themes/HighContrast.xaml"),
+            [Midnight] = new(Midnight, "Theme/Themes/Midnight.xaml"),
+            [Nord] = new(Nord, "Theme/Themes/Nord.xaml"),
+            [Oled] = new(Oled, "Theme/Themes/Oled.xaml"),
         };
 
     /// <summary>

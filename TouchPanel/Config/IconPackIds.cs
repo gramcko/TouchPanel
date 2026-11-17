@@ -15,14 +15,22 @@ public static class IconPackIds
     /// <summary>The alternate built-in pack id (a filled variant of the default glyphs).</summary>
     public const string Filled = "filled";
 
+    /// <summary>The built-in pack id for line-art/alternate glyph variants.</summary>
+    public const string Outline = "outline";
+
+    /// <summary>The built-in pack id for emphasis-filled glyph variants.</summary>
+    public const string Duotone = "duotone";
+
     /// <summary>The known icon-pack ids, in a stable order (default first).</summary>
-    public static IReadOnlyList<string> All { get; } = [Default, Filled];
+    public static IReadOnlyList<string> All { get; } = [Default, Filled, Outline, Duotone];
 
     private static readonly Dictionary<string, string> CanonicalIds =
         new(StringComparer.OrdinalIgnoreCase)
         {
             [Default] = Default,
             [Filled] = Filled,
+            [Outline] = Outline,
+            [Duotone] = Duotone,
         };
 
     /// <summary>

@@ -56,6 +56,30 @@ public static class ThemeAppearanceDefaults
         FontSize: 18,
         Opacity: 1.0);
 
+    /// <summary>The midnight defaults: a pale blue-white foreground on the deep-blue surface.</summary>
+    public static ThemeAppearanceDefault Midnight { get; } = new(
+        Foreground: "#E8ECF8",
+        Background: "#161E33",
+        Accent: "#6FA8FF",
+        FontSize: 15,
+        Opacity: 1.0);
+
+    /// <summary>The nord defaults: a warm off-white foreground on the blue-grey surface.</summary>
+    public static ThemeAppearanceDefault Nord { get; } = new(
+        Foreground: "#ECEFF4",
+        Background: "#3B4252",
+        Accent: "#88C0D0",
+        FontSize: 15,
+        Opacity: 1.0);
+
+    /// <summary>The oled defaults: light text on a near-black surface with a cyan accent.</summary>
+    public static ThemeAppearanceDefault Oled { get; } = new(
+        Foreground: "#F2F2F2",
+        Background: "#121212",
+        Accent: "#00C2FF",
+        FontSize: 15,
+        Opacity: 1.0);
+
     /// <summary>
     /// Gets the defaults for a theme id; an unknown or missing id falls back to <see cref="Dark"/>
     /// (M5-RF-540 edge case). Never throws and never returns <see langword="null"/>.
@@ -66,6 +90,9 @@ public static class ThemeAppearanceDefaults
     {
         ThemeIds.Light => Light,
         ThemeIds.HighContrast => HighContrast,
+        ThemeIds.Midnight => Midnight,
+        ThemeIds.Nord => Nord,
+        ThemeIds.Oled => Oled,
         _ => Dark,
     };
 

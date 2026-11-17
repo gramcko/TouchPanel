@@ -1,7 +1,8 @@
 using TouchPanel.Config;
 using TouchPanel.Services.Config;
 using TouchPanel.Tests.TestSupport;
-using TouchPanel.ViewModels.Hotkeys;
+using TouchPanel.Theme;
+using TouchPanel.ViewModels.Settings;
 
 namespace TouchPanel.Tests.ViewModels;
 
@@ -22,6 +23,66 @@ public sealed class AppearanceEditorViewModelTests
         _ = new AppearanceEditorViewModel(settings, () => current);
 
         Assert.Empty(settings.Changes);
+    }
+
+    [Fact]
+    public void Options_ListEveryBuiltInThemeAndIconPack()
+    {
+        var settings = new FakeSettingsService();
+        var viewModel = new AppearanceEditorViewModel(settings, () => new AppearanceConfig());
+
+        Assert.Equal(ThemeIds.All, viewModel.ThemeOptions);
+        Assert.Equal(IconPackIds.All, viewModel.IconPackOptions);
+
+        foreach (var themeId in new[] { ThemeIds.Midnight, ThemeIds.Nord, ThemeIds.Oled })
+        {
+            Assert.Contains(themeId, viewModel.ThemeOptions);
+        }
+
+        foreach (var packId in new[] { IconPackIds.Outline, IconPackIds.Duotone })
+        {
+            Assert.Contains(packId, viewModel.IconPackOptions);
+        }
+    }
+
+    [Theory]
+    [InlineData(ThemeIds.Midnight, IconPackIds.Outline)]
+    [InlineData(ThemeIds.Nord, IconPackIds.Duotone)]
+    [InlineData(ThemeIds.Oled, IconPackIds.Filled)]
+    public async Task SelectingANewThemeAndPack_AppliesPersistsAndIsSeededOnReload(
+        string themeId,
+        string packId)
+    {
+        var settings = new FakeSettingsService();
+        var current = new AppearanceConfig { Theme = ThemeIds.Dark, IconPack = IconPackIds.Default };
+        settings.Handler = change =>
+        {
+            current = new AppearanceConfig
+            {
+                Theme = change.Appearance!.Theme,
+                IconPack = change.Appearance.IconPack,
+                AccentColor = change.Appearance.AccentColor,
+            };
+            return SettingsApplyResult.Success(new PanelConfig());
+        };
+
+        var viewModel = new AppearanceEditorViewModel(settings, () => current);
+        viewModel.SelectedTheme = themeId;
+        viewModel.SelectedIconPack = packId;
+        await viewModel.ApplySelectionInternalAsync();
+
+        var change = settings.Changes[^1];
+        Assert.Equal(themeId, change.Appearance!.Theme);
+        Assert.Equal(packId, change.Appearance.IconPack);
+        Assert.False(viewModel.StatusIsError);
+
+        // The selection persisted through the single-writer path, so a freshly constructed editor
+        // (as after reopening the window) shows the same theme and pack without a redundant save.
+        var appliedCount = settings.Changes.Count;
+        var reloaded = new AppearanceEditorViewModel(settings, () => current);
+        Assert.Equal(themeId, reloaded.SelectedTheme);
+        Assert.Equal(packId, reloaded.SelectedIconPack);
+        Assert.Equal(appliedCount, settings.Changes.Count);
     }
 
     [Fact]

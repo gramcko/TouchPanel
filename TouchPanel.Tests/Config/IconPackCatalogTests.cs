@@ -16,7 +16,68 @@ public sealed class IconPackCatalogTests
         Assert.Equal(IconPackIds.All, IconPackCatalog.PackIds);
         Assert.Contains(IconPackIds.Default, IconPackCatalog.PackIds);
         Assert.Contains(IconPackIds.Filled, IconPackCatalog.PackIds);
-        Assert.True(IconPackCatalog.PackIds.Count >= 2);
+        Assert.Contains(IconPackIds.Outline, IconPackCatalog.PackIds);
+        Assert.Contains(IconPackIds.Duotone, IconPackCatalog.PackIds);
+        Assert.True(IconPackCatalog.PackIds.Count >= 4);
+    }
+
+    [Theory]
+    [InlineData(IconPackIds.Default)]
+    [InlineData(IconPackIds.Filled)]
+    [InlineData(IconPackIds.Outline)]
+    [InlineData(IconPackIds.Duotone)]
+    public void EveryPack_ResolvesEveryStableIconId(string packId)
+    {
+        foreach (var option in IconCatalog.BuiltIn)
+        {
+            Assert.True(
+                IconPackCatalog.TryGetGlyph(packId, option.Id, out var glyph),
+                $"Pack '{packId}' did not resolve stable id '{option.Id}'.");
+            Assert.False(string.IsNullOrEmpty(glyph));
+        }
+    }
+
+    [Fact]
+    public void EveryPack_KeepsTheStableIdNamespace()
+    {
+        foreach (var packId in IconPackIds.All)
+        {
+            Assert.False(IconPackCatalog.TryGetGlyph(packId, "not-a-real-icon", out _));
+            Assert.Null(IconPackCatalog.GlyphFor(packId, "not-a-real-icon"));
+        }
+    }
+
+    [Theory]
+    [InlineData(IconPackIds.Outline)]
+    [InlineData(IconPackIds.Duotone)]
+    public void NewPacks_OverrideASubset_ButMissingIdsFallBackToDefault(string packId)
+    {
+        var overriddenIds = new[] { "star", "heart" };
+        foreach (var id in overriddenIds)
+        {
+            var defaultGlyph = IconCatalog.GlyphFor(id);
+            var packGlyph = IconPackCatalog.GlyphFor(packId, id);
+            Assert.NotNull(defaultGlyph);
+            Assert.NotNull(packGlyph);
+            Assert.NotEqual(defaultGlyph, packGlyph);
+        }
+
+        // `microphone` is intentionally not overridden by the new packs, so it resolves to default.
+        Assert.Equal(IconCatalog.GlyphFor("microphone"), IconPackCatalog.GlyphFor(packId, "microphone"));
+    }
+
+    [Fact]
+    public void NewPacks_AreCaseInsensitiveAndNormalized()
+    {
+        Assert.Equal(
+            IconPackCatalog.GlyphFor(IconPackIds.Outline, "star"),
+            IconPackCatalog.GlyphFor("OUTLINE", "star"));
+        Assert.Equal(
+            IconPackCatalog.GlyphFor(IconPackIds.Duotone, "star"),
+            IconPackCatalog.GlyphFor("  Duotone  ", "star"));
+        Assert.NotEqual(
+            IconPackCatalog.GlyphFor(IconPackIds.Outline, "star"),
+            IconPackCatalog.GlyphFor(IconPackIds.Duotone, "star"));
     }
 
     [Fact]
