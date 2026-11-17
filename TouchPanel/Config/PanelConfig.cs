@@ -149,8 +149,23 @@ public enum MonitorFallback
 /// <summary>Window behavior options (RF-020, D-3).</summary>
 public sealed class WindowConfig
 {
+    private string _pageTransition = PageTransitionModes.Default;
+
     /// <summary>Gets or sets a value indicating whether the panel stays above other windows; defaults to <see langword="false"/> (D-3).</summary>
     public bool AlwaysOnTop { get; set; }
+
+    /// <summary>
+    /// Gets or sets the normal-mode page-change animation (user-requested addition, additive under
+    /// schema v4): one of <see cref="PageTransitionModes.All"/> compared case-insensitively. A
+    /// missing or explicit JSON null is normalized to <see cref="PageTransitionModes.Default"/>
+    /// (slide); an unknown id is normalized by validation with a warning, so an older file without
+    /// the property still loads unchanged.
+    /// </summary>
+    public string PageTransition
+    {
+        get => _pageTransition;
+        set => _pageTransition = value ?? PageTransitionModes.Default;
+    }
 }
 
 /// <summary>Start-with-Windows options (RF-003, D-4).</summary>

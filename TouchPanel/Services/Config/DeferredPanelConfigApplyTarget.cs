@@ -33,6 +33,11 @@ internal sealed class DeferredPanelConfigApplyTarget : IPanelConfigApplyTarget
     }
 
     /// <inheritdoc />
+    public void RebuildActivePage(PanelConfig config, PageTransitionDirection direction)
+    {
+    }
+
+    /// <inheritdoc />
     public void ApplyTelemetryOptions(TelemetryConfig telemetry)
     {
     }

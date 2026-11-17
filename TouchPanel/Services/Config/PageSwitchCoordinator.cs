@@ -41,6 +41,22 @@ public interface IPageSwitchService
     /// <param name="cancellationToken">Cancels the persistence write.</param>
     /// <returns>The switch outcome; never <see langword="null"/>.</returns>
     Task<PageSwitchResult> SwitchAsync(string requestedPageId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Switches the active page like <see cref="SwitchAsync(string, CancellationToken)"/> and also
+    /// carries the page-change direction so the panel can make the slide transition direction-aware
+    /// (user-requested addition). The default implementation forwards without a direction, so
+    /// implementations that do not animate need no change.
+    /// </summary>
+    /// <param name="requestedPageId">The requested page id; an unknown id falls back to the first page.</param>
+    /// <param name="direction">The page-change direction (forward for tabs/Open, backward for a right swipe).</param>
+    /// <param name="cancellationToken">Cancels the persistence write.</param>
+    /// <returns>The switch outcome; never <see langword="null"/>.</returns>
+    Task<PageSwitchResult> SwitchAsync(
+        string requestedPageId,
+        PageTransitionDirection direction,
+        CancellationToken cancellationToken = default) =>
+        SwitchAsync(requestedPageId, cancellationToken);
 }
 
 /// <summary>
@@ -92,8 +108,15 @@ public sealed class PageSwitchCoordinator : IPageSwitchService
     }
 
     /// <inheritdoc />
+    public Task<PageSwitchResult> SwitchAsync(
+        string requestedPageId,
+        CancellationToken cancellationToken = default) =>
+        SwitchAsync(requestedPageId, PageTransitionDirection.Forward, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<PageSwitchResult> SwitchAsync(
         string requestedPageId,
+        PageTransitionDirection direction,
         CancellationToken cancellationToken = default)
     {
         var config = _configAccessor();
@@ -125,8 +148,9 @@ public sealed class PageSwitchCoordinator : IPageSwitchService
         try
         {
             // M2-RF-914/M2-RF-824: the target disposes the outgoing page view models (releasing
-            // their subscriptions) and builds the incoming page on the UI thread.
-            _target.RebuildActivePage(config);
+            // their subscriptions) and builds the incoming page on the UI thread. The direction lets
+            // the panel make the slide transition direction-aware (user-requested addition).
+            _target.RebuildActivePage(config, direction);
         }
         catch (Exception ex)
         {

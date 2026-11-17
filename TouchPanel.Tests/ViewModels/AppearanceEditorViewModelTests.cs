@@ -209,4 +209,74 @@ public sealed class AppearanceEditorViewModelTests
 
         Assert.Empty(settings.Changes);
     }
+
+    [Fact]
+    public void PageTransitionOptions_ListEveryModeInAStableOrder()
+    {
+        var settings = new FakeSettingsService();
+        var viewModel = new AppearanceEditorViewModel(settings, () => new AppearanceConfig());
+
+        Assert.Equal(PageTransitionModes.All, viewModel.PageTransitionOptions);
+        Assert.Equal(PageTransitionModes.Default, viewModel.SelectedPageTransition);
+    }
+
+    [Fact]
+    public async Task SelectingPageTransition_AppliesItThroughTheSharedSettingsPath()
+    {
+        var settings = new FakeSettingsService();
+        var window = new WindowConfig { AlwaysOnTop = true, PageTransition = PageTransitionModes.Slide };
+        var viewModel = new AppearanceEditorViewModel(
+            settings,
+            () => new AppearanceConfig(),
+            currentWindow: () => window);
+
+        viewModel.SelectedPageTransition = "SLIDEUP";
+        await viewModel.ApplySelectionInternalAsync();
+
+        var change = Assert.Single(settings.Changes);
+        Assert.Equal(PageTransitionModes.SlideUp, change.PageTransition);
+        Assert.Equal(PageTransitionModes.SlideUp, viewModel.SelectedPageTransition);
+        Assert.False(viewModel.StatusIsError);
+    }
+
+    [Fact]
+    public async Task SelectingPageTransition_SeededFromTheRunningValue_DoesNotApply()
+    {
+        var settings = new FakeSettingsService();
+        var window = new WindowConfig { PageTransition = PageTransitionModes.Fade };
+        _ = new AppearanceEditorViewModel(settings, () => new AppearanceConfig(), currentWindow: () => window);
+
+        await Task.Yield();
+
+        Assert.Empty(settings.Changes);
+    }
+
+    [Fact]
+    public async Task FailedPageTransitionApply_RevertsTheSelection()
+    {
+        var settings = new FakeSettingsService
+        {
+            Handler = _ => SettingsApplyResult.Failure("settings.saveFailed", "The appearance could not be saved."),
+        };
+        var viewModel = new AppearanceEditorViewModel(
+            settings,
+            () => new AppearanceConfig(),
+            currentWindow: () => new WindowConfig { PageTransition = PageTransitionModes.Slide });
+
+        viewModel.SelectedPageTransition = PageTransitionModes.Zoom;
+        await viewModel.ApplySelectionInternalAsync();
+
+        Assert.Equal(PageTransitionModes.Slide, viewModel.SelectedPageTransition);
+        Assert.True(viewModel.StatusIsError);
+    }
+
+    [Fact]
+    public void PageTransitionDropdown_UsesTheDocumentedModes()
+    {
+        Assert.Contains("none", PageTransitionModes.All);
+        Assert.Contains("slide", PageTransitionModes.All);
+        Assert.Contains("fade", PageTransitionModes.All);
+        Assert.Contains("slideUp", PageTransitionModes.All);
+        Assert.Contains("zoom", PageTransitionModes.All);
+    }
 }

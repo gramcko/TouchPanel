@@ -74,6 +74,7 @@ public static class ConfigValidator
 
         ValidateTelemetry(config, diagnostics);
         ValidateMonitor(config, diagnostics);
+        ValidateWindow(config, diagnostics);
         ValidateAppearance(config, diagnostics);
         EnsurePages(config, diagnostics);
         ValidatePages(config, config.Hotkeys, culture, diagnostics);
@@ -167,6 +168,31 @@ public static class ConfigValidator
             diagnostics.Add(ConfigDiagnostic.Info(
                 "config.monitor.identity",
                 "A blank monitor friendly name was ignored."));
+        }
+    }
+
+    /// <summary>
+    /// Normalizes the optional <c>window.pageTransition</c> value (user-requested addition, additive
+    /// under schema v4): ids are case-insensitive and normalized to their canonical spelling without
+    /// a warning; an unknown value falls back to <c>slide</c> with a warning, so a single bad entry
+    /// never fails the whole file and older files (property missing) keep the documented default.
+    /// </summary>
+    /// <param name="config">The configuration whose window section is validated.</param>
+    /// <param name="diagnostics">The diagnostic sink.</param>
+    private static void ValidateWindow(PanelConfig config, List<ConfigDiagnostic> diagnostics)
+    {
+        var window = config.Window;
+        var configured = window.PageTransition;
+        if (!PageTransitionModes.TryNormalize(configured, out var canonical))
+        {
+            window.PageTransition = canonical;
+            diagnostics.Add(ConfigDiagnostic.Warning(
+                "config.window.pageTransition",
+                $"Unknown page transition '{configured}'; using '{canonical}'."));
+        }
+        else if (!string.Equals(configured, canonical, StringComparison.Ordinal))
+        {
+            window.PageTransition = canonical;
         }
     }
 

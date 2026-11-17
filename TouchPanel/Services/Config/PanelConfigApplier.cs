@@ -32,6 +32,16 @@ public interface IPanelConfigApplyTarget
     /// <param name="config">The validated configuration whose active page is rendered.</param>
     void RebuildActivePage(PanelConfig config);
 
+    /// <summary>
+    /// Disposes the current active page view models and rebuilds them for a user page switch, so the
+    /// panel can play the configured page transition in the requested direction (user-requested
+    /// addition). A configuration apply that is not a page switch uses
+    /// <see cref="RebuildActivePage(PanelConfig)"/> and never animates.
+    /// </summary>
+    /// <param name="config">The validated configuration whose active page is rendered.</param>
+    /// <param name="direction">The page-change direction (forward for tabs/Open, backward for a right swipe).</param>
+    void RebuildActivePage(PanelConfig config, PageTransitionDirection direction);
+
     /// <summary>Applies the telemetry polling interval (and any capacity reconciliation) live.</summary>
     /// <param name="telemetry">The validated telemetry section.</param>
     void ApplyTelemetryOptions(TelemetryConfig telemetry);

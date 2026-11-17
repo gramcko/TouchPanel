@@ -52,7 +52,7 @@ public sealed class PageSwitcherViewModel : INotifyPropertyChanged
         _logger = (logger ?? Log.Logger).ForContext<PageSwitcherViewModel>();
         _activePageId = PageSwitchCoordinator.ResolveActivePageId(config);
         _pages = BuildPages();
-        SelectPageCommand = new SwitchPageCommand(SwitchToAsync);
+        SelectPageCommand = new SwitchPageCommand(pageId => SwitchToAsync(pageId));
         NextPageCommand = new AsyncRelayCommand(() => MoveByAsync(1));
         PreviousPageCommand = new AsyncRelayCommand(() => MoveByAsync(-1));
     }
@@ -123,16 +123,22 @@ public sealed class PageSwitcherViewModel : INotifyPropertyChanged
     /// <see langword="false"/>.
     /// </summary>
     /// <param name="pageId">The requested page id; must not be <see langword="null"/>.</param>
+    /// <param name="direction">
+    /// The page-change direction used by the normal-mode transition (user-requested addition). Tabs,
+    /// Open, and direct selections use the default forward direction.
+    /// </param>
     /// <returns><see langword="true"/> when the active page changed; otherwise <see langword="false"/>.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="pageId"/> is <see langword="null"/>.</exception>
-    public async Task<bool> SwitchToAsync(string pageId)
+    public async Task<bool> SwitchToAsync(
+        string pageId,
+        PageTransitionDirection direction = PageTransitionDirection.Forward)
     {
         ArgumentNullException.ThrowIfNull(pageId);
 
         PageSwitchResult result;
         try
         {
-            result = await _switchService.SwitchAsync(pageId).ConfigureAwait(true);
+            result = await _switchService.SwitchAsync(pageId, direction).ConfigureAwait(true);
         }
         catch (Exception ex)
         {
@@ -181,7 +187,11 @@ public sealed class PageSwitcherViewModel : INotifyPropertyChanged
             return false;
         }
 
-        return await SwitchToAsync(_pages[target].Id).ConfigureAwait(true);
+        // A swipe/drag to the left (next) moves forward, so the new page enters from the right; a
+        // swipe to the right (previous) moves backward, so it enters from the left (direction-aware
+        // slide rotation, user-requested addition).
+        var transitionDirection = step > 0 ? PageTransitionDirection.Forward : PageTransitionDirection.Backward;
+        return await SwitchToAsync(_pages[target].Id, transitionDirection).ConfigureAwait(true);
     }
 
     /// <summary>

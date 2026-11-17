@@ -17,6 +17,13 @@ public sealed record SettingsChange
     /// <summary>Gets the desired <c>window.alwaysOnTop</c> value, or <see langword="null"/> to leave it unchanged.</summary>
     public bool? AlwaysOnTop { get; init; }
 
+    /// <summary>
+    /// Gets the desired <c>window.pageTransition</c> id (user-requested addition), or
+    /// <see langword="null"/> to leave it unchanged. The value is normalized by validation, so an
+    /// unknown id falls back to <c>slide</c> with a warning and never fails the whole change.
+    /// </summary>
+    public string? PageTransition { get; init; }
+
     /// <summary>Gets the desired <c>startup.startWithWindows</c> value, or <see langword="null"/> to leave it unchanged.</summary>
     public bool? StartWithWindows { get; init; }
 
@@ -353,6 +360,10 @@ public sealed class SettingsCoordinator : ISettingsService
             Window = new WindowConfig
             {
                 AlwaysOnTop = change.AlwaysOnTop ?? current.Window.AlwaysOnTop,
+
+                // User-requested page transitions: an explicit new id replaces the running one; null
+                // preserves it, so unrelated edits never reset the animation.
+                PageTransition = change.PageTransition ?? current.Window.PageTransition,
             },
             Startup = new StartupConfig
             {

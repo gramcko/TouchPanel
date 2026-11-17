@@ -95,6 +95,12 @@ public partial class App : Application, IPanelConfigApplyTarget
     private ThemeManager? _themeManager;
     private ClockCultureSource? _clockCulture;
 
+    /// <summary>
+    /// Set while an edit-mode page change deliberately suspended the edit session; page transitions
+    /// are skipped then because the change is not a normal-mode user gesture (user-requested addition).
+    /// </summary>
+    private bool _editSessionSuspendedForPageChange;
+
     /// <summary>Gets the resolved per-user paths (log and configuration directories).</summary>
     public AppPaths Paths { get; } = AppPaths.Default;
 
@@ -1039,6 +1045,13 @@ public partial class App : Application, IPanelConfigApplyTarget
         // every widget realizes with the active pack and the correct palette (runs on the UI thread).
         ApplyAppearanceCore(context.Config.Appearance);
 
+        // User-requested page transitions: the configured mode is read live on each page change; the
+        // startup render itself never animates, edit-mode skips it, and an explicit mode always wins
+        // over the OS animation-effects preference. The log sink makes the decision diagnosable.
+        window.PageTransition = PageTransitionModes.Parse(context.Config.Window.PageTransition);
+        window.PageTransitionsAllowed = PageTransitionsAllowed;
+        window.PageTransitionLog = _logger.Information;
+
         // T-10/RF-032/RF-037: render the active page of the loaded configuration in the panel.
         var page = AttachActivePage(window, context.Config);
 
@@ -1160,13 +1173,30 @@ public partial class App : Application, IPanelConfigApplyTarget
     {
         Dispatcher.Invoke(() =>
         {
-            if (_mainWindowViewModel?.SetAlwaysOnTop(window.AlwaysOnTop) == true
-                && MainWindow is MainWindow panel)
+            if (MainWindow is MainWindow panel)
             {
-                panel.SetTopmost(window.AlwaysOnTop);
+                // User-requested page transitions: a settings/hot-reload change takes effect on the
+                // next page change, without a restart.
+                panel.PageTransition = PageTransitionModes.Parse(window.PageTransition);
+            }
+
+            if (_mainWindowViewModel?.SetAlwaysOnTop(window.AlwaysOnTop) == true
+                && MainWindow is MainWindow topmostPanel)
+            {
+                topmostPanel.SetTopmost(window.AlwaysOnTop);
             }
         });
     }
+
+    /// <summary>
+    /// Gate consulted by the panel before playing a page transition (user-requested addition):
+    /// never while an edit session owns the panel (page changes there already save/exit/re-enter) and
+    /// never while an edit-mode page change is running with the session suspended. The OS
+    /// animation-effects preference is not consulted: an explicit mode always wins.
+    /// </summary>
+    /// <returns><see langword="true"/> when a normal-mode page change may animate.</returns>
+    private bool PageTransitionsAllowed() =>
+        _editModeService?.IsEditMode != true && !_editSessionSuspendedForPageChange;
 
     /// <summary>
     /// <see cref="IPanelConfigApplyTarget"/> (MD-10): re-applies the monitor fallback policy and
@@ -1193,10 +1223,24 @@ public partial class App : Application, IPanelConfigApplyTarget
     /// <see cref="IPanelConfigApplyTarget"/> (MD-10/M2-RF-824): disposes the current active page
     /// view models and rebuilds them from the new configuration on the UI thread, then rebinds edit
     /// mode to the rebuilt page. The old page is disposed by <see cref="AttachActivePage"/> so no
-    /// widget subscription leaks.
+    /// widget subscription leaks. This is the configuration-apply path (hot reload/import), so it
+    /// never plays a page transition.
     /// </summary>
     /// <param name="config">The validated configuration whose active page is rendered.</param>
-    void IPanelConfigApplyTarget.RebuildActivePage(PanelConfig config)
+    void IPanelConfigApplyTarget.RebuildActivePage(PanelConfig config) =>
+        RebuildActivePageCore(config, PageTransitionDirection.Forward, animate: false);
+
+    /// <summary>
+    /// <see cref="IPanelConfigApplyTarget"/> (user-requested addition): rebuilds the active page for a
+    /// user page switch and plays the configured transition in the requested direction. Animations
+    /// are skipped in edit mode and with reduced motion by the panel itself.
+    /// </summary>
+    /// <param name="config">The validated configuration whose active page is rendered.</param>
+    /// <param name="direction">The page-change direction.</param>
+    void IPanelConfigApplyTarget.RebuildActivePage(PanelConfig config, PageTransitionDirection direction) =>
+        RebuildActivePageCore(config, direction, animate: true);
+
+    private void RebuildActivePageCore(PanelConfig config, PageTransitionDirection direction, bool animate)
     {
         Dispatcher.Invoke(() =>
         {
@@ -1205,7 +1249,7 @@ public partial class App : Application, IPanelConfigApplyTarget
                 return;
             }
 
-            var page = AttachActivePage(window, config);
+            var page = AttachActivePage(window, config, direction, animate);
 
             // T-16/M2-RF-824: keep the page selector in sync with the (possibly replaced) effective
             // configuration on every page rebuild (hot reload, import, or a page switch itself).
@@ -1389,8 +1433,14 @@ public partial class App : Application, IPanelConfigApplyTarget
     /// </summary>
     /// <param name="window">The panel window that receives the page as its data context.</param>
     /// <param name="config">The validated configuration whose active page is rendered.</param>
+    /// <param name="direction">The page-change direction, when this rebuild is a user page switch.</param>
+    /// <param name="animate">Whether this rebuild may play the configured page transition.</param>
     /// <returns>The rendered page, or <see langword="null"/> when the page could not be built.</returns>
-    private PageViewModel? AttachActivePage(MainWindow window, PanelConfig config)
+    private PageViewModel? AttachActivePage(
+        MainWindow window,
+        PanelConfig config,
+        PageTransitionDirection direction = PageTransitionDirection.Forward,
+        bool animate = false)
     {
         var registry = _widgetRegistry;
         if (registry is null)
@@ -1404,7 +1454,12 @@ public partial class App : Application, IPanelConfigApplyTarget
             var page = PageViewModel.CreateForActivePage(config, registry);
             var previous = _pageViewModel;
             _pageViewModel = page;
-            window.DataContext = page;
+
+            // User-requested page transitions: the window captures the outgoing page, swaps the
+            // content, and animates only for normal-mode page switches (the controller also checks
+            // reduced motion). The previous page is disposed after the visual swap; the outgoing
+            // snapshot is a bitmap, so the disposed page's visual is never animated.
+            window.ShowPage(page, direction, animate);
             previous?.Dispose();
 
             _logger.Information(
@@ -1538,7 +1593,17 @@ public partial class App : Application, IPanelConfigApplyTarget
                 new DelegateEditSessionGate(
                     () => _editModeService?.IsEditMode == true,
                     SuspendEditSessionForPageChangeAsync,
-                    () => SetEditModeAsync(enter: true)),
+                    async () =>
+                    {
+                        try
+                        {
+                            await SetEditModeAsync(enter: true).ConfigureAwait(true);
+                        }
+                        finally
+                        {
+                            _editSessionSuspendedForPageChange = false;
+                        }
+                    }),
                 _logger);
 
             _editModePagesViewModel = new PagesEditorViewModel(
@@ -1585,6 +1650,10 @@ public partial class App : Application, IPanelConfigApplyTarget
         // coordinator's edit-mode switch guard is released for this deliberate, already-saved change.
         await service.ExitAsync(cancellationToken).ConfigureAwait(true);
         UpdateEditModeMenuItem();
+
+        // User-requested page transitions are a normal-mode affordance only: the edit-mode pages
+        // surface suppresses them until it re-enters the session.
+        _editSessionSuspendedForPageChange = true;
         return true;
     }
 
@@ -1870,7 +1939,8 @@ public partial class App : Application, IPanelConfigApplyTarget
             var appearanceViewModel = new AppearanceEditorViewModel(
                 settings,
                 () => Config?.Appearance,
-                _logger);
+                _logger,
+                () => Config?.Window);
 
             var window = new SettingsWindow(settingsViewModel, pickerViewModel, pagesViewModel, appearanceViewModel);
             window.Closed += (_, _) => _settingsWindow = null;

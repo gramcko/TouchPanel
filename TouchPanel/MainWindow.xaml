@@ -18,9 +18,13 @@
         active PageViewModel as the window's DataContext once the configuration has loaded.
     -->
     <Grid x:Name="PanelRoot"
+          ClipToBounds="True"
           Stylus.IsPressAndHoldEnabled="False"
           Stylus.IsFlicksEnabled="False">
-        <views:WidgetPageHost x:Name="PageHost" />
+        <views:WidgetPageHost x:Name="PageHost" RenderTransformOrigin="0.5,0.5" />
+        <!-- User-requested page transitions: a hit-test-invisible layer above the page host (below the
+             selector) holds the outgoing page snapshot for the duration of the animation. -->
+        <Grid x:Name="PageTransitionLayer" IsHitTestVisible="False" Focusable="False" ClipToBounds="True" />
         <!-- T-16/RF-091: the in-panel page selector sits above the widgets in normal mode; the
              edit overlay below covers it while editing so a switch cannot discard an edit session. -->
         <views:PageSwitcherView x:Name="PageSwitcher" />

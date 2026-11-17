@@ -30,10 +30,12 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
 
     private string _selectedTheme;
     private string _selectedIconPack;
+    private string _selectedPageTransition;
     private string _accentText;
     private string? _appliedAccent;
     private string? _lastTheme;
     private string? _lastIconPack;
+    private string? _lastPageTransition;
     private string? _lastAccent;
     private bool _isBusy;
     private bool _applying;
@@ -48,11 +50,16 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
     /// <param name="settings">The single-writer apply boundary; must not be <see langword="null"/>.</param>
     /// <param name="current">Returns the currently running appearance section; must not be <see langword="null"/>.</param>
     /// <param name="logger">Logger for summary-only messages; defaults to the global Serilog logger.</param>
+    /// <param name="currentWindow">
+    /// Returns the currently running window section so the page-transition dropdown seeds from the
+    /// live value (user-requested addition); <see langword="null"/> seeds the documented default.
+    /// </param>
     /// <exception cref="ArgumentNullException">Thrown when a required dependency is <see langword="null"/>.</exception>
     public AppearanceEditorViewModel(
         ISettingsService settings,
         Func<AppearanceConfig?> current,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        Func<WindowConfig?>? currentWindow = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _current = current ?? throw new ArgumentNullException(nameof(current));
@@ -60,13 +67,16 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
 
         ThemeOptions = ThemeIds.All;
         IconPackOptions = IconPackIds.All;
+        PageTransitionOptions = PageTransitionModes.All;
 
         var appearance = current() ?? new AppearanceConfig();
         _lastTheme = ThemeIds.Normalize(appearance.Theme);
         _lastIconPack = IconPackIds.Normalize(appearance.IconPack);
         _lastAccent = string.IsNullOrWhiteSpace(appearance.AccentColor) ? null : appearance.AccentColor;
+        _lastPageTransition = PageTransitionModes.Normalize(currentWindow?.Invoke()?.PageTransition);
         _selectedTheme = _lastTheme;
         _selectedIconPack = _lastIconPack;
+        _selectedPageTransition = _lastPageTransition;
         _appliedAccent = _lastAccent;
         _accentText = _lastAccent ?? string.Empty;
 
@@ -82,6 +92,33 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
 
     /// <summary>Gets the built-in icon-pack ids in a stable order (M3-RF-844).</summary>
     public IReadOnlyList<string> IconPackOptions { get; }
+
+    /// <summary>
+    /// Gets the page-transition ids offered by the "Page transition" dropdown (user-requested
+    /// addition): <c>none</c>, <c>slide</c>, <c>fade</c>, <c>slideUp</c>, and <c>zoom</c>.
+    /// <c>none</c> is the only option that disables transitions; every animated selection always
+    /// plays on page changes (the OS animation-effects preference does not override it).
+    /// </summary>
+    public IReadOnlyList<string> PageTransitionOptions { get; }
+
+    /// <summary>
+    /// Gets or sets the selected normal-mode page transition; a change applies immediately through
+    /// the shared single-writer settings path (user-requested addition). Unknown input is normalized
+    /// to <c>slide</c>, exactly like the configuration validator. An explicit selection always
+    /// animates on the next page change; only <c>none</c> turns transitions off.
+    /// </summary>
+    public string SelectedPageTransition
+    {
+        get => _selectedPageTransition;
+        set
+        {
+            var normalized = PageTransitionModes.Normalize(value);
+            if (SetField(ref _selectedPageTransition, normalized))
+            {
+                _ = ApplySelectionAsync();
+            }
+        }
+    }
 
     /// <summary>Gets or sets the selected theme; a change applies immediately (M3-RF-850).</summary>
     public string SelectedTheme
@@ -187,7 +224,7 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
 
         AccentError = null;
         _appliedAccent = normalized;
-        await ApplyAsync(_selectedTheme, _selectedIconPack, normalized).ConfigureAwait(true);
+        await ApplyAsync(_selectedTheme, _selectedIconPack, normalized, _selectedPageTransition).ConfigureAwait(true);
     }
 
     private async Task ClearAccentAsync()
@@ -195,10 +232,11 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
         AccentError = null;
         SetField(ref _accentText, string.Empty, nameof(AccentText));
         _appliedAccent = null;
-        await ApplyAsync(_selectedTheme, _selectedIconPack, accent: null).ConfigureAwait(true);
+        await ApplyAsync(_selectedTheme, _selectedIconPack, accent: null, _selectedPageTransition).ConfigureAwait(true);
     }
 
-    private Task ApplySelectionAsync() => ApplyAsync(_selectedTheme, _selectedIconPack, _appliedAccent);
+    private Task ApplySelectionAsync() =>
+        ApplyAsync(_selectedTheme, _selectedIconPack, _appliedAccent, _selectedPageTransition);
 
     /// <summary>
     /// Test seam (M3-RF-850): validates and applies the accent color field. The
@@ -216,7 +254,7 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
     /// <returns>A task that completes when the apply attempt finished.</returns>
     internal Task ApplySelectionInternalAsync() => ApplySelectionAsync();
 
-    private async Task ApplyAsync(string theme, string iconPack, string? accent)
+    private async Task ApplyAsync(string theme, string iconPack, string? accent, string pageTransition)
     {
         if (_applying)
         {
@@ -226,7 +264,8 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
         // Initial data binding assigns the running values; applying them would be a redundant save.
         if (string.Equals(theme, _lastTheme, StringComparison.Ordinal)
             && string.Equals(iconPack, _lastIconPack, StringComparison.Ordinal)
-            && string.Equals(accent, _lastAccent, StringComparison.Ordinal))
+            && string.Equals(accent, _lastAccent, StringComparison.Ordinal)
+            && string.Equals(pageTransition, _lastPageTransition, StringComparison.Ordinal))
         {
             return;
         }
@@ -243,7 +282,7 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
             };
 
             var result = await _settings
-                .ApplyAsync(new SettingsChange { Appearance = next })
+                .ApplyAsync(new SettingsChange { Appearance = next, PageTransition = pageTransition })
                 .ConfigureAwait(true);
 
             if (result.Succeeded)
@@ -251,6 +290,7 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
                 _lastTheme = theme;
                 _lastIconPack = iconPack;
                 _lastAccent = accent;
+                _lastPageTransition = pageTransition;
                 SetStatus("Appearance applied.", isError: false);
             }
             else
@@ -276,6 +316,10 @@ public sealed class AppearanceEditorViewModel : INotifyPropertyChanged
     {
         SetField(ref _selectedTheme, _lastTheme ?? ThemeIds.Dark, nameof(SelectedTheme));
         SetField(ref _selectedIconPack, _lastIconPack ?? IconPackIds.Default, nameof(SelectedIconPack));
+        SetField(
+            ref _selectedPageTransition,
+            _lastPageTransition ?? PageTransitionModes.Default,
+            nameof(SelectedPageTransition));
         _appliedAccent = _lastAccent;
         SetField(ref _accentText, _lastAccent ?? string.Empty, nameof(AccentText));
     }

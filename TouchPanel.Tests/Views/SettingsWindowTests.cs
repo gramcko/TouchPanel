@@ -118,6 +118,7 @@ public sealed class SettingsWindowTests
                 var section = Assert.IsType<StackPanel>(window.FindName("AppearanceEditor"));
                 var theme = Assert.IsType<ComboBox>(window.FindName("ThemeSelector"));
                 var pack = Assert.IsType<ComboBox>(window.FindName("IconPackSelector"));
+                var transition = Assert.IsType<ComboBox>(window.FindName("PageTransitionSelector"));
                 var accent = Assert.IsType<TextBox>(window.FindName("AccentTextBox"));
                 var setAccent = Assert.IsType<Button>(window.FindName("SetAccentButton"));
                 var clearAccent = Assert.IsType<Button>(window.FindName("ClearAccentButton"));
@@ -128,6 +129,9 @@ public sealed class SettingsWindowTests
                     BoundToViewModel = ReferenceEquals(section.DataContext, appearance),
                     ThemeCount = theme.Items.Count,
                     PackCount = pack.Items.Count,
+                    TransitionCount = transition.Items.Count,
+                    TransitionMinHeight = transition.MinHeight,
+                    SelectedTransition = transition.SelectedItem as string,
                     SelectedTheme = theme.SelectedItem as string,
                     AccentHeight = accent.MinHeight,
                     SetAccentHeight = setAccent.MinHeight,
@@ -145,6 +149,9 @@ public sealed class SettingsWindowTests
         Assert.True(result.BoundToViewModel);
         Assert.Equal(ThemeIds.All.Count, result.ThemeCount);
         Assert.Equal(IconPackIds.All.Count, result.PackCount);
+        Assert.Equal(PageTransitionModes.All.Count, result.TransitionCount);
+        Assert.True(result.TransitionMinHeight >= 40);
+        Assert.Equal(PageTransitionModes.Default, result.SelectedTransition);
         Assert.Equal("dark", result.SelectedTheme);
 
         // M3-RF-850/RF-025: the appearance affordances meet the 40 DIP touch minimum.

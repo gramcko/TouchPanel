@@ -25,6 +25,9 @@ internal sealed class RecordingPanelConfigApplyTarget : IPanelConfigApplyTarget
     /// <summary>Gets the last configuration passed to <see cref="RebuildActivePage"/>.</summary>
     public PanelConfig? LastRebuilt { get; private set; }
 
+    /// <summary>Gets the direction carried by the last user page switch, when one was recorded.</summary>
+    public PageTransitionDirection? LastDirection { get; private set; }
+
     /// <summary>Gets the last telemetry section applied.</summary>
     public TelemetryConfig? LastTelemetry { get; private set; }
 
@@ -66,6 +69,13 @@ internal sealed class RecordingPanelConfigApplyTarget : IPanelConfigApplyTarget
     {
         Record("active-page");
         LastRebuilt = config;
+    }
+
+    /// <inheritdoc />
+    public void RebuildActivePage(PanelConfig config, PageTransitionDirection direction)
+    {
+        LastDirection = direction;
+        RebuildActivePage(config);
     }
 
     /// <inheritdoc />

@@ -1,15 +1,19 @@
 using System.ComponentModel;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Threading;
+using TouchPanel.Config;
 using TouchPanel.Input;
 using TouchPanel.Interop;
 using TouchPanel.Services.Display;
 using TouchPanel.Services.Monitors;
 using TouchPanel.ViewModels;
+using TouchPanel.ViewModels.Paging;
 using TouchPanel.ViewModels.Settings;
+using TouchPanel.Views;
 
 namespace TouchPanel;
 
@@ -38,6 +42,7 @@ public partial class MainWindow : Window, IPanelWindow
     private HwndSource? _hwndSource;
     private HwndSourceHook? _windowHook;
     private EditModeService? _editModeService;
+    private PageTransitionController? _pageTransition;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MainWindow"/> class and subscribes to
@@ -68,6 +73,71 @@ public partial class MainWindow : Window, IPanelWindow
 
     /// <summary>Gets the monitor whose full bounds the panel targets, or <see langword="null"/> before placement.</summary>
     public MonitorDescriptor? TargetMonitor => _targetMonitor;
+
+    /// <summary>
+    /// Gets or sets the normal-mode page-change animation (user-requested addition, additive under
+    /// schema v4). The composition root applies it from <c>window.pageTransition</c> at startup and
+    /// live through the shared apply pipeline; a change takes effect on the next page change without
+    /// a restart.
+    /// </summary>
+    public PageTransitionKind PageTransition { get; set; } = PageTransitionKind.Slide;
+
+    /// <summary>
+    /// Gets or sets the context gate consulted before a transition animates. The composition root
+    /// returns <see langword="false"/> while an edit session owns the panel (page changes there
+    /// already save/exit/re-enter); <see langword="null"/> means allowed. The OS animation-effects
+    /// preference no longer suppresses playback: an explicit mode always wins.
+    /// </summary>
+    public Func<bool>? PageTransitionsAllowed { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional diagnostic sink for page transitions (one Information-style line
+    /// per page change). The composition root supplies it so the settings/planner decision is
+    /// visible in the log; the window only forwards the delegate to the controller.
+    /// </summary>
+    public Action<string>? PageTransitionLog { get; set; }
+
+    /// <summary>Gets the transition controller (created on first use) for the window's STA tests.</summary>
+    internal PageTransitionController PageTransitionForTest => Transition;
+
+    private PageTransitionController Transition =>
+        _pageTransition ??= new PageTransitionController(
+            PageTransitionLayer,
+            () => PageTransitionsAllowed?.Invoke() != false,
+            log: line => PageTransitionLog?.Invoke(line));
+
+    /// <summary>
+    /// Replaces the rendered page and, in normal mode, plays the configured transition
+    /// (user-requested addition). The outgoing page is captured before the swap, the incoming page is
+    /// interactive immediately, and the animation never runs at startup, in edit mode, or when the
+    /// mode is <c>none</c>. If the outgoing snapshot cannot be captured, the selected animation
+    /// still plays over the incoming page.
+    /// </summary>
+    /// <param name="page">The new page view model, or <see langword="null"/> for no widgets.</param>
+    /// <param name="direction">The page-change direction (forward for tabs/Open, backward for a right swipe).</param>
+    /// <param name="animate">Whether this change may animate (page switches only; never on reload/startup).</param>
+    internal void ShowPage(object? page, PageTransitionDirection direction, bool animate)
+    {
+        var controller = Transition;
+
+        if (!animate)
+        {
+            controller.Reset();
+        }
+
+        var started = animate && controller.BeginTransition(PageHost, PageTransition, direction);
+
+        DataContext = page;
+        if (!started)
+        {
+            return;
+        }
+
+        // The new content must be measured before the animation starts, otherwise the slide would
+        // begin from the previous layout; UpdateLayout is synchronous and cheap for a page swap.
+        PageHost.UpdateLayout();
+        controller.CompleteTransition(PageHost);
+    }
 
     /// <summary>
     /// Gets the DPI scale (physical pixels per DIP) of the monitor the panel currently occupies
@@ -587,6 +657,8 @@ public partial class MainWindow : Window, IPanelWindow
 
         _hwndSource = null;
         _windowHook = null;
+        _pageTransition?.Dispose();
+        _pageTransition = null;
         base.OnClosed(e);
     }
 

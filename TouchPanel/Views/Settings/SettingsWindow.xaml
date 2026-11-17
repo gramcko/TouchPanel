@@ -136,6 +136,14 @@
                               ItemsSource="{Binding IconPackOptions}"
                               SelectedItem="{Binding SelectedIconPack, Mode=TwoWay}" />
 
+                    <!-- User-requested page transitions: applies live on the next page change. -->
+                    <TextBlock Text="Page transition" FontSize="13" Margin="0,6,0,2" />
+                    <ComboBox x:Name="PageTransitionSelector" MinHeight="40" FontSize="14"
+                              ItemsSource="{Binding PageTransitionOptions}"
+                              SelectedItem="{Binding SelectedPageTransition, Mode=TwoWay}" />
+                    <TextBlock Text="Selected transitions always play on page changes; None turns them off."
+                               FontSize="12" Margin="0,2,0,0" TextWrapping="Wrap" />
+
                     <TextBlock Text="Accent color (#RRGGBB or #AARRGGBB; blank = theme accent)"
                                FontSize="13" Margin="0,6,0,2" TextWrapping="Wrap" />
                     <StackPanel Orientation="Horizontal">
