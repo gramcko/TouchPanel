@@ -24,6 +24,26 @@
 
             <BooleanToVisibilityConverter x:Key="PageSwitcherVisibilityConverter" />
 
+            <!--
+                Phone-homepage page dot (non-interactive indicator): the active dot is accent-filled
+                and slightly larger so the current page is visible without hover. Dots are not
+                focusable and never take pointer input; the tab strip above remains the switch
+                affordance.
+            -->
+            <Style x:Key="PageDotStyle" TargetType="Ellipse">
+                <Setter Property="Width" Value="10" />
+                <Setter Property="Height" Value="10" />
+                <Setter Property="Margin" Value="5,0" />
+                <Setter Property="Fill" Value="{DynamicResource WidgetBorderBrush}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsActive}" Value="True">
+                        <Setter Property="Width" Value="13" />
+                        <Setter Property="Height" Value="13" />
+                        <Setter Property="Fill" Value="{DynamicResource PanelAccentBrush}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+
             <!-- Touch-first page tab (>= 44 DIP). The active page is highlighted with the accent
                  border, visible without hover (RF-025). -->
             <Style x:Key="PageTabButtonStyle" TargetType="ButtonBase">
@@ -73,11 +93,20 @@
     </UserControl.Resources>
 
     <Grid x:Name="SelectorRoot"
-          HorizontalAlignment="Center"
-          VerticalAlignment="Top"
-          Margin="0,8,0,0"
+          HorizontalAlignment="Stretch"
+          VerticalAlignment="Stretch"
           Visibility="{Binding CanSwitch, Converter={StaticResource PageSwitcherVisibilityConverter}, FallbackValue=Collapsed}">
-        <Border Background="#CC1E1E1E"
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Existing touch tab strip, kept usable above the pager. -->
+        <Border Grid.Row="0"
+                HorizontalAlignment="Center"
+                Margin="0,8,0,0"
+                Background="#CC1E1E1E"
                 BorderBrush="{DynamicResource WidgetBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="12"
@@ -103,6 +132,57 @@
                     </DataTemplate>
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
+        </Border>
+
+        <!--
+            Phone-homepage indicator: one dot per page plus a "current / count" label at the bottom
+            center. It is hit-test-invisible so it can never block a widget tap; the active page and
+            the total are visible in normal mode without hover or keyboard focus.
+        -->
+        <Border x:Name="PageIndicator"
+                Grid.Row="2"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,12"
+                Padding="12,6"
+                Background="#CC1E1E1E"
+                BorderBrush="{DynamicResource WidgetBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="12"
+                IsHitTestVisible="False"
+                Focusable="False">
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        IsHitTestVisible="False"
+                        Focusable="False">
+                <ItemsControl x:Name="PageDots"
+                              ItemsSource="{Binding Pages}"
+                              VerticalAlignment="Center"
+                              IsHitTestVisible="False"
+                              Focusable="False"
+                              IsTabStop="False">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Ellipse x:Name="PageDot"
+                                     Style="{StaticResource PageDotStyle}"
+                                     ToolTip="{Binding DisplayName}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <TextBlock x:Name="PageIndicatorText"
+                           Text="{Binding PageIndicatorText}"
+                           Margin="10,0,0,0"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource PanelForegroundBrush}"
+                           IsHitTestVisible="False" />
+            </StackPanel>
         </Border>
     </Grid>
 </UserControl>

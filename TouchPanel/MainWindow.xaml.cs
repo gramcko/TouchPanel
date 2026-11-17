@@ -263,6 +263,11 @@ public partial class MainWindow : Window, IPanelWindow
         ArgumentNullException.ThrowIfNull(viewModel);
 
         PageSwitcher.DataContext = viewModel;
+
+        // The pager's swipe/drag gestures are inert while edit mode owns the pointer, so the edit
+        // overlay's drag/resize handles keep their own gestures; page switches are likewise refused
+        // by the coordinator during an edit session.
+        PageSwitcher.IsPagingEnabled = () => _editModeService?.IsEditMode != true;
     }
 
     /// <summary>

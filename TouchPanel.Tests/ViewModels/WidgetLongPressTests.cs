@@ -68,6 +68,17 @@ public sealed class WidgetLongPressTests
         Assert.Equal(1, executor.InvocationCount);
     }
 
+    [Fact]
+    public void HorizontalSwipeMovement_IsRecognizedForLongPressCancellation()
+    {
+        var press = new System.Windows.Point(100, 100);
+
+        Assert.True(TouchPanel.Views.WidgetPageHost.IsHorizontalSwipeAwayFromPress(press, new System.Windows.Point(80, 102)));
+        Assert.False(TouchPanel.Views.WidgetPageHost.IsHorizontalSwipeAwayFromPress(press, new System.Windows.Point(104, 102)));
+        Assert.False(TouchPanel.Views.WidgetPageHost.IsHorizontalSwipeAwayFromPress(press, new System.Windows.Point(102, 180)));
+        Assert.False(TouchPanel.Views.WidgetPageHost.IsHorizontalSwipeAwayFromPress(press, new System.Windows.Point(140, 160)));
+    }
+
     private static PanelConfig ConfigWithButton() => new()
     {
         SchemaVersion = PanelConfig.CurrentSchemaVersion,

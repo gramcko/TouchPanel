@@ -1,0 +1,273 @@
+<UserControl x:Class="TouchPanel.Views.Settings.PagesEditorView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Focusable="False"
+             IsTabStop="False">
+
+    <!--
+        Touch pages management (user-requested): add, select, open (switch active), rename, and
+        remove pages. Every actionable affordance is at least 40 DIP tall, uses the existing theme
+        brushes through DynamicResource, and has visible press/selected states (no hover-only
+        affordance). Removing the last page is blocked by the view model and the bound IsEnabled.
+        The view is pure XAML over PagesEditorViewModel; the composition root assigns it.
+    -->
+
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/TouchPanel;component/Theme/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <BooleanToVisibilityConverter x:Key="PagesBoolToVisibilityConverter" />
+
+            <Style x:Key="PagesSectionHeaderStyle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="16" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelAccentBrush}" />
+                <Setter Property="Margin" Value="0,12,0,6" />
+            </Style>
+
+            <Style x:Key="PagesFieldStyle" TargetType="TextBox">
+                <Setter Property="MinHeight" Value="40" />
+                <Setter Property="FontSize" Value="15" />
+                <Setter Property="Padding" Value="8,4" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+                <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+            </Style>
+
+            <Style x:Key="PagesButtonStyle" TargetType="Button">
+                <Setter Property="MinHeight" Value="44" />
+                <Setter Property="MinWidth" Value="44" />
+                <Setter Property="Margin" Value="0,0,8,0" />
+                <Setter Property="Padding" Value="12,6" />
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+                <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Surface"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="8"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Surface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                                    <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="Surface" Property="Opacity" Value="0.45" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="PagesRowSelectButtonStyle"
+                   TargetType="Button"
+                   BasedOn="{StaticResource PagesButtonStyle}">
+                <Setter Property="MinHeight" Value="44" />
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                <Setter Property="Padding" Value="12,6" />
+                <Setter Property="Margin" Value="0" />
+            </Style>
+
+            <Style x:Key="PagesRowContainerStyle" TargetType="Border">
+                <Setter Property="MinHeight" Value="48" />
+                <Setter Property="Padding" Value="4" />
+                <Setter Property="Margin" Value="0,0,0,6" />
+                <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                        <Setter Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                        <Setter Property="BorderThickness" Value="2" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <StackPanel Focusable="False">
+        <TextBlock Text="Pages" Style="{StaticResource PagesSectionHeaderStyle}" />
+
+        <!-- Add a page: unique id and generated/entered label; appended after the current pages. -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="NewPageNameBox"
+                     Grid.Column="0"
+                     Margin="0,0,8,0"
+                     Style="{StaticResource PagesFieldStyle}"
+                     Text="{Binding NewPageName, UpdateSourceTrigger=PropertyChanged}"
+                     ToolTip="New page name (blank = generated 'Page N')" />
+            <Button x:Name="AddPageButton"
+                    Grid.Column="1"
+                    Style="{StaticResource PagesButtonStyle}"
+                    Content="Add page"
+                    IsEnabled="{Binding CanAddPage}"
+                    Command="{Binding AddPageCommand}" />
+        </Grid>
+
+        <!-- Page list: tap a row to select; Open makes it active; Remove asks for confirmation. -->
+        <ItemsControl x:Name="PageItems"
+                      ItemsSource="{Binding Pages}"
+                      Margin="0,8,0,0"
+                      Focusable="False"
+                      IsTabStop="False">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border x:Name="PageRow" Style="{StaticResource PagesRowContainerStyle}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Button x:Name="SelectPageRowButton"
+                                    Grid.Column="0"
+                                    Style="{StaticResource PagesRowSelectButtonStyle}"
+                                    Command="{Binding DataContext.SelectPageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding Id}"
+                                    AutomationProperties.Name="{Binding DisplayName}">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Position, StringFormat={}{0}.}"
+                                               Margin="0,0,8,0"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding DisplayName}"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="Active"
+                                               Margin="10,0,0,0"
+                                               FontSize="12"
+                                               FontWeight="Bold"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource PanelAccentBrush}"
+                                               Visibility="{Binding IsActive, Converter={StaticResource PagesBoolToVisibilityConverter}}" />
+                                </StackPanel>
+                            </Button>
+
+                            <Button x:Name="OpenPageButton"
+                                    Grid.Column="1"
+                                    Content="Open"
+                                    Command="{Binding DataContext.OpenPageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding Id}">
+                                <Button.Style>
+                                    <Style TargetType="Button" BasedOn="{StaticResource PagesButtonStyle}">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsActive}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+
+                            <Button x:Name="RemovePageButton"
+                                    Grid.Column="2"
+                                    Style="{StaticResource PagesButtonStyle}"
+                                    Content="Remove"
+                                    Margin="0"
+                                    IsEnabled="{Binding DataContext.CanRemoveSelected, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    Command="{Binding DataContext.RequestRemovePageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding Id}" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <!-- Rename the selected page. -->
+        <TextBlock Text="Selected page name" FontSize="13" Margin="0,6,0,2" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="SelectedPageNameBox"
+                     Grid.Column="0"
+                     Margin="0,0,8,0"
+                     Style="{StaticResource PagesFieldStyle}"
+                     Text="{Binding SelectedPageName, UpdateSourceTrigger=PropertyChanged}" />
+            <Button x:Name="RenamePageButton"
+                    Grid.Column="1"
+                    Style="{StaticResource PagesButtonStyle}"
+                    Content="Rename"
+                    IsEnabled="{Binding CanRenameSelected}"
+                    Command="{Binding RenamePageCommand}" />
+        </Grid>
+
+        <!-- Inline, focus-free confirmation; never a modal window or a MessageBox. -->
+        <Border x:Name="RemoveConfirmation"
+                Margin="0,8,0,0"
+                Padding="12"
+                Background="{DynamicResource WidgetSurfaceBrush}"
+                BorderBrush="{DynamicResource PanelAccentBrush}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Visibility="{Binding IsRemoveConfirmationVisible, Converter={StaticResource PagesBoolToVisibilityConverter}, FallbackValue=Collapsed}">
+            <StackPanel Focusable="False">
+                <TextBlock Text="Remove this page?"
+                           FontSize="14"
+                           FontWeight="SemiBold"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource PanelForegroundBrush}" />
+                <TextBlock Text="{Binding PendingRemovePageName}"
+                           Margin="0,2,0,0"
+                           FontSize="14"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource PanelForegroundBrush}" />
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0" Focusable="False">
+                    <Button x:Name="CancelRemovePageButton"
+                            Style="{StaticResource PagesButtonStyle}"
+                            Content="Cancel"
+                            Command="{Binding CancelRemoveCommand}" />
+                    <Button x:Name="ConfirmRemovePageButton"
+                            Style="{StaticResource PagesButtonStyle}"
+                            Content="Remove"
+                            Margin="0"
+                            Command="{Binding ConfirmRemoveCommand}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <TextBlock x:Name="PagesStatusText"
+                   Text="{Binding StatusMessage}"
+                   FontSize="13"
+                   TextWrapping="Wrap"
+                   Margin="0,8,0,0"
+                   Visibility="{Binding HasStatusMessage, Converter={StaticResource PagesBoolToVisibilityConverter}, FallbackValue=Collapsed}">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding StatusIsError}" Value="True">
+                            <Setter Property="Foreground" Value="{DynamicResource WidgetErrorBrush}" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+    </StackPanel>
+</UserControl>

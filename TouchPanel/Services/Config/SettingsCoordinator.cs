@@ -46,6 +46,22 @@ public sealed record SettingsChange
     /// an appearance edit never resets hotkeys (and vice versa).
     /// </summary>
     public AppearanceConfig? Appearance { get; init; }
+
+    /// <summary>
+    /// Gets the desired full <c>pages</c> list, or <see langword="null"/> to leave the running page
+    /// list unchanged (user-requested pages management). A non-null value replaces the page list
+    /// atomically; every other section is preserved, and the shared apply pipeline rebuilds the
+    /// active page. The caller is responsible for the last-page guard and unique ids
+    /// (<see cref="PageListOperations"/>).
+    /// </summary>
+    public IReadOnlyList<PageConfig>? Pages { get; init; }
+
+    /// <summary>
+    /// Gets the desired <c>activePageId</c>, or <see langword="null"/> to leave it unchanged.
+    /// Removing the active page passes the deterministic first-page fallback from
+    /// <see cref="PageListOperations.RemovePage"/>; validation also substitutes an unknown id.
+    /// </summary>
+    public string? ActivePageId { get; init; }
 }
 
 /// <summary>
@@ -317,11 +333,17 @@ public sealed class SettingsCoordinator : ISettingsService
         var monitorIdentity = change.SetMonitorMatch ? change.MonitorMatch : current.Monitor.Match;
         var monitorFallback = change.MonitorFallback ?? current.Monitor.Fallback;
 
+        // Pages management replaces the list and, when needed, the active id. A null value keeps the
+        // running pages exactly as before, so unrelated settings edits never reorder or reset pages.
+        var pages = change.Pages is { } requestedPages
+            ? new List<PageConfig>(requestedPages)
+            : current.Pages;
+
         return new PanelConfig
         {
             SchemaVersion = current.SchemaVersion,
-            ActivePageId = current.ActivePageId,
-            Pages = current.Pages,
+            ActivePageId = change.ActivePageId ?? current.ActivePageId,
+            Pages = pages,
 
             // M3-RF-615/M3-RF-841: a non-null Hotkeys/Appearance change replaces that section; a
             // null value preserves the running one. Every other section keeps its running value so

@@ -49,6 +49,9 @@ public static class ConfigValidator
     /// <summary>Maximum accepted label length in characters (RF-043/M2-RF-435), mirroring the edit UI.</summary>
     public const int MaxLabelLength = 128;
 
+    /// <summary>Maximum accepted page-name length in characters, mirroring the pages editor.</summary>
+    public const int MaxPageNameLength = 64;
+
     /// <summary>
     /// Validates and normalizes <paramref name="config"/> in place (see the class remarks for the
     /// exact contract) and returns the diagnostics produced. The result is never
@@ -280,6 +283,8 @@ public static class ConfigValidator
                 $"Duplicate page id '{page.Id}'; only the first page with this id can be activated."));
         }
 
+        NormalizePageName(page, diagnostics);
+
         var widgetIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var widget in page.Widgets)
         {
@@ -296,6 +301,43 @@ public static class ConfigValidator
         for (var index = 0; index < page.Widgets.Count; index++)
         {
             ValidateWidget(page, page.Widgets[index], index, widgetIds, hotkeys, clockCulture, diagnostics);
+        }
+    }
+
+    /// <summary>
+    /// Normalizes the optional page label (additive under schema v4): blank names fall back to the id
+    /// (stored as <see langword="null"/>), and an over-long name is truncated to
+    /// <see cref="MaxPageNameLength"/> with a warning. Hostile input never throws.
+    /// </summary>
+    /// <param name="page">The page whose name is normalized.</param>
+    /// <param name="diagnostics">The diagnostic sink.</param>
+    private static void NormalizePageName(PageConfig page, List<ConfigDiagnostic> diagnostics)
+    {
+        var name = page.Name;
+        if (name is null)
+        {
+            return;
+        }
+
+        var trimmed = name.Trim();
+        if (trimmed.Length == 0)
+        {
+            page.Name = null;
+            return;
+        }
+
+        if (trimmed.Length > MaxPageNameLength)
+        {
+            page.Name = trimmed[..MaxPageNameLength];
+            diagnostics.Add(ConfigDiagnostic.Warning(
+                "config.page.name",
+                $"Page '{page.Id}' had a name longer than {MaxPageNameLength} characters; it was truncated."));
+            return;
+        }
+
+        if (!string.Equals(trimmed, name, StringComparison.Ordinal))
+        {
+            page.Name = trimmed;
         }
     }
 

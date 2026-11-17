@@ -1747,7 +1747,21 @@ public partial class App : Application, IPanelConfigApplyTarget
                 Notifier,
                 _logger);
 
-            var window = new SettingsWindow(settingsViewModel, pickerViewModel);
+            // Pages management reuses the existing page-switch coordinator for the active page and
+            // the shared single-writer settings service for add/rename/remove. Structural changes are
+            // disabled while an edit session owns the panel so a page rebuild cannot discard it.
+            PagesEditorViewModel? pagesViewModel = null;
+            if (_pageSwitchCoordinator is { } pageSwitchCoordinator)
+            {
+                pagesViewModel = new PagesEditorViewModel(
+                    settings,
+                    pageSwitchCoordinator,
+                    () => Config,
+                    () => _editModeService?.IsEditMode != true,
+                    _logger);
+            }
+
+            var window = new SettingsWindow(settingsViewModel, pickerViewModel, pagesViewModel);
             window.Closed += (_, _) => _settingsWindow = null;
             _settingsWindow = window;
 

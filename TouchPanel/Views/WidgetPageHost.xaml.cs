@@ -19,8 +19,16 @@ namespace TouchPanel.Views;
 /// </summary>
 public partial class WidgetPageHost : UserControl
 {
+    /// <summary>
+    /// Horizontal travel in DIPs after which a press is treated as a page swipe and the pending
+    /// long-press is abandoned, so swiping never opens edit mode mid-gesture.
+    /// </summary>
+    private const double SwipeCancelDistance = 12;
+
     private readonly WidgetLongPressCoordinator _longPress;
     private readonly DispatcherTimer _longPressTimer;
+    private Point _pressPoint;
+    private bool _hasPressPoint;
 
     /// <summary>Initializes a new instance of the <see cref="WidgetPageHost"/> class.</summary>
     public WidgetPageHost()
@@ -33,6 +41,14 @@ public partial class WidgetPageHost : UserControl
             Interval = _longPress.Threshold,
         };
         _longPressTimer.Tick += OnLongPressTimerTick;
+
+        // The pager's window-level gesture handler marks the release handled after a recognized
+        // swipe. Listen with handledEventsToo so the long-press timer is still stopped and cannot
+        // fire edit mode after the swipe (the widget's action remains suppressed by the pager).
+        AddHandler(
+            UIElement.PreviewMouseLeftButtonUpEvent,
+            new MouseButtonEventHandler(OnWidgetPreviewMouseLeftButtonUp),
+            handledEventsToo: true);
     }
 
     /// <summary>
@@ -54,15 +70,52 @@ public partial class WidgetPageHost : UserControl
             return;
         }
 
+        _pressPoint = e.GetPosition(this);
+        _hasPressPoint = true;
         _longPress.Press(widget, DateTimeOffset.UtcNow);
         _longPressTimer.Stop();
         _longPressTimer.Interval = _longPress.Threshold;
         _longPressTimer.Start();
     }
 
+    private void OnWidgetPreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_hasPressPoint || !_longPress.IsPressed)
+        {
+            return;
+        }
+
+        if (!IsHorizontalSwipeAwayFromPress(_pressPoint, e.GetPosition(this)))
+        {
+            return;
+        }
+
+        // A predominantly horizontal drag is a page swipe (or an intentional horizontal gesture),
+        // not a press-and-hold: abandon the pending edit-mode entry without suppressing the tap.
+        _hasPressPoint = false;
+        _longPressTimer.Stop();
+        _longPress.Cancel();
+    }
+
+    /// <summary>
+    /// Reports whether pointer movement from a press is a predominantly horizontal drag large enough
+    /// to be a page swipe. Such a drag cancels the pending long press so the pager, not edit-mode
+    /// entry, owns the gesture. Pure and testable without a window.
+    /// </summary>
+    /// <param name="pressPoint">The press origin in DIPs.</param>
+    /// <param name="currentPoint">The current pointer position in DIPs.</param>
+    /// <returns><see langword="true"/> when the press should be treated as a horizontal swipe.</returns>
+    internal static bool IsHorizontalSwipeAwayFromPress(Point pressPoint, Point currentPoint)
+    {
+        var deltaX = currentPoint.X - pressPoint.X;
+        var deltaY = currentPoint.Y - pressPoint.Y;
+        return Math.Abs(deltaX) >= SwipeCancelDistance && Math.Abs(deltaX) > Math.Abs(deltaY);
+    }
+
     private void OnWidgetPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
         _longPressTimer.Stop();
+        _hasPressPoint = false;
         if (_longPress.Release())
         {
             // A long press already requested edit mode; stop the widget's tap action from firing by

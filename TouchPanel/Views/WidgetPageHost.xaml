@@ -25,7 +25,7 @@
                   Focusable="False"
                   IsTabStop="False"
                   PreviewMouseLeftButtonDown="OnWidgetPreviewMouseLeftButtonDown"
-                  PreviewMouseLeftButtonUp="OnWidgetPreviewMouseLeftButtonUp">
+                  PreviewMouseMove="OnWidgetPreviewMouseMove">
         <ItemsControl.ItemsPanel>
             <ItemsPanelTemplate>
                 <Canvas Background="Transparent" />

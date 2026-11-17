@@ -53,6 +53,8 @@ public sealed class PageSwitcherViewModel : INotifyPropertyChanged
         _activePageId = PageSwitchCoordinator.ResolveActivePageId(config);
         _pages = BuildPages();
         SelectPageCommand = new SwitchPageCommand(SwitchToAsync);
+        NextPageCommand = new AsyncRelayCommand(() => MoveByAsync(1));
+        PreviousPageCommand = new AsyncRelayCommand(() => MoveByAsync(-1));
     }
 
     /// <inheritdoc />
@@ -70,8 +72,49 @@ public sealed class PageSwitcherViewModel : INotifyPropertyChanged
     /// </summary>
     public bool CanSwitch => _pages.Count > 1;
 
+    /// <summary>Gets the zero-based index of the active page, or <c>-1</c> when no page is active.</summary>
+    public int ActiveIndex
+    {
+        get
+        {
+            for (var index = 0; index < _pages.Count; index++)
+            {
+                if (string.Equals(_pages[index].Id, _activePageId, StringComparison.Ordinal))
+                {
+                    return index;
+                }
+            }
+
+            return -1;
+        }
+    }
+
+    /// <summary>Gets the number of configured pages shown by the pager indicator.</summary>
+    public int PageCount => _pages.Count;
+
+    /// <summary>
+    /// Gets the human-readable position indicator (for example <c>2 / 3</c>) shown by the pager in
+    /// addition to the dots, so the current page and the count are visible without hover.
+    /// </summary>
+    public string PageIndicatorText =>
+        _pages.Count == 0 || ActiveIndex < 0
+            ? string.Empty
+            : $"{ActiveIndex + 1} / {_pages.Count}";
+
+    /// <summary>Gets a value indicating whether a later page exists (the pager does not wrap at the end).</summary>
+    public bool CanGoNext => CanSwitch && ActiveIndex >= 0 && ActiveIndex < _pages.Count - 1;
+
+    /// <summary>Gets a value indicating whether an earlier page exists.</summary>
+    public bool CanGoPrevious => CanSwitch && ActiveIndex > 0;
+
     /// <summary>Gets the touch command that switches to the page id passed as its parameter.</summary>
     public ICommand SelectPageCommand { get; }
+
+    /// <summary>Gets the command that advances one page, used by the pager's next affordance.</summary>
+    public ICommand NextPageCommand { get; }
+
+    /// <summary>Gets the command that moves back one page, used by the pager's previous affordance.</summary>
+    public ICommand PreviousPageCommand { get; }
 
     /// <summary>
     /// Switches to the requested page through <see cref="IPageSwitchService"/> and mirrors the
@@ -105,10 +148,40 @@ public sealed class PageSwitcherViewModel : INotifyPropertyChanged
 
         _activePageId = result.ResolvedPageId;
         _pages = BuildPages();
-        OnPropertyChanged(nameof(ActivePageId));
-        OnPropertyChanged(nameof(Pages));
-        OnPropertyChanged(nameof(CanSwitch));
+        RaisePresentationChanged();
         return true;
+    }
+
+    /// <summary>
+    /// Moves one page forward (<paramref name="direction"/> &gt; 0) or back
+    /// (<paramref name="direction"/> &lt; 0), clamped at the ends (the pager does not wrap). Used by
+    /// the touch/mouse swipe recognizer and by the pager's next/previous affordances; the actual
+    /// rebuild and persistence stay in <see cref="IPageSwitchService"/>. Unknown, zero, or
+    /// out-of-range requests are no-ops.
+    /// </summary>
+    /// <param name="direction">The relative page step; only the sign is used.</param>
+    /// <returns><see langword="true"/> when the active page changed; otherwise <see langword="false"/>.</returns>
+    public async Task<bool> MoveByAsync(int direction)
+    {
+        var step = Math.Sign(direction);
+        if (step == 0)
+        {
+            return false;
+        }
+
+        var index = ActiveIndex;
+        if (index < 0)
+        {
+            return false;
+        }
+
+        var target = index + step;
+        if (target < 0 || target >= _pages.Count)
+        {
+            return false;
+        }
+
+        return await SwitchToAsync(_pages[target].Id).ConfigureAwait(true);
     }
 
     /// <summary>
@@ -125,18 +198,28 @@ public sealed class PageSwitcherViewModel : INotifyPropertyChanged
         _config = config;
         _activePageId = PageSwitchCoordinator.ResolveActivePageId(config);
         _pages = BuildPages();
-        OnPropertyChanged(nameof(ActivePageId));
-        OnPropertyChanged(nameof(Pages));
-        OnPropertyChanged(nameof(CanSwitch));
+        RaisePresentationChanged();
     }
 
     private IReadOnlyList<PageSwitcherItem> BuildPages() =>
         _config.Pages
             .Select(page => new PageSwitcherItem(
                 page.Id,
-                page.Id,
+                PageListOperations.DisplayName(page),
                 string.Equals(page.Id, _activePageId, StringComparison.Ordinal)))
             .ToArray();
+
+    private void RaisePresentationChanged()
+    {
+        OnPropertyChanged(nameof(ActivePageId));
+        OnPropertyChanged(nameof(Pages));
+        OnPropertyChanged(nameof(CanSwitch));
+        OnPropertyChanged(nameof(ActiveIndex));
+        OnPropertyChanged(nameof(PageCount));
+        OnPropertyChanged(nameof(PageIndicatorText));
+        OnPropertyChanged(nameof(CanGoNext));
+        OnPropertyChanged(nameof(CanGoPrevious));
+    }
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));

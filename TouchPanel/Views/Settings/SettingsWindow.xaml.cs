@@ -14,13 +14,17 @@ namespace TouchPanel.Views.Settings;
 public partial class SettingsWindow : Window
 {
     private MonitorPickerViewModel? _picker;
+    private PagesEditorViewModel? _pages;
 
     /// <summary>Initializes a new instance of the <see cref="SettingsWindow"/> class (XAML/designer path).</summary>
     public SettingsWindow()
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        Activated += OnActivated;
     }
+
+    private void OnActivated(object? sender, EventArgs e) => _pages?.Refresh();
 
     /// <summary>
     /// Initializes a new instance of the <see cref="SettingsWindow"/> class with the composition
@@ -28,8 +32,12 @@ public partial class SettingsWindow : Window
     /// </summary>
     /// <param name="settings">The settings presentation state; must not be <see langword="null"/>.</param>
     /// <param name="picker">The monitor-picker presentation state, or <see langword="null"/> when it is unavailable.</param>
+    /// <param name="pages">The pages-management presentation state, or <see langword="null"/> when pages management is unavailable.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="settings"/> is <see langword="null"/>.</exception>
-    public SettingsWindow(SettingsViewModel settings, MonitorPickerViewModel? picker = null)
+    public SettingsWindow(
+        SettingsViewModel settings,
+        MonitorPickerViewModel? picker = null,
+        PagesEditorViewModel? pages = null)
         : this()
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -40,10 +48,26 @@ public partial class SettingsWindow : Window
             _picker = picker;
             MonitorPicker.DataContext = picker;
         }
+
+        if (pages is not null)
+        {
+            _pages = pages;
+            PagesEditor.DataContext = pages;
+        }
+        else
+        {
+            // Pages management needs the page-switch coordinator; keep the section out of the
+            // settings surface rather than showing inert controls.
+            PagesEditor.Visibility = Visibility.Collapsed;
+        }
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        // Reflect external hot reload/import changes and the current edit-mode gate whenever this
+        // deliberate activating window is brought forward.
+        _pages?.Refresh();
+
         if (_picker is not { } picker)
         {
             return;
