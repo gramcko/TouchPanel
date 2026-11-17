@@ -84,6 +84,16 @@ public partial class WidgetPageHost : UserControl
     /// </summary>
     internal EmptySpaceLongPressCoordinator EmptySpaceLongPressForTest => _emptySpaceLongPress;
 
+    /// <summary>Gets the widget items host (below the optional background layers).</summary>
+    internal ItemsControl WidgetItemsForTest => WidgetItems;
+
+    /// <summary>Gets the solid background layer rendered behind the widgets.</summary>
+    internal Border ColorBackgroundForTest => PageColorBackground;
+
+    /// <summary>Gets the image background layer rendered behind the widgets.</summary>
+    internal Image ImageBackgroundForTest => PageImageBackground;
+
+
     private void RequestEditMode() => EditModeRequested?.Invoke(this, EventArgs.Empty);
 
     private void OnWidgetPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)

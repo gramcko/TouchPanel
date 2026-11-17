@@ -264,6 +264,73 @@
                     Command="{Binding RenamePageCommand}" />
         </Grid>
 
+        <!-- Optional per-page background (user-requested addition): a validated color and/or an
+             absolute image path. Apply persists both drafts atomically; Clear removes one layer
+             immediately. Both render behind the widgets on the active page. -->
+        <TextBlock Text="Page background" Style="{StaticResource PagesSectionHeaderStyle}" />
+        <TextBlock Text="Color (#RRGGBB or #AARRGGBB; blank = theme)"
+                   FontSize="13"
+                   Margin="0,0,0,2"
+                   TextWrapping="Wrap" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="BackgroundColorBox"
+                     Grid.Column="0"
+                     Margin="0,0,8,0"
+                     Style="{StaticResource PagesFieldStyle}"
+                     Text="{Binding BackgroundColor, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding CanEditBackground}" />
+            <Button x:Name="ApplyBackgroundButton"
+                    Grid.Column="1"
+                    Style="{StaticResource PagesButtonStyle}"
+                    Content="Apply"
+                    AutomationProperties.Name="Apply page background"
+                    IsEnabled="{Binding CanEditBackground}"
+                    Command="{Binding ApplyBackgroundCommand}" />
+        </Grid>
+
+        <TextBlock Text="Image (absolute path)"
+                   FontSize="13"
+                   Margin="0,6,0,2" />
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="BackgroundImageBox"
+                     Grid.Column="0"
+                     Margin="0,0,8,0"
+                     Style="{StaticResource PagesFieldStyle}"
+                     Text="{Binding BackgroundImagePath, UpdateSourceTrigger=PropertyChanged}"
+                     IsEnabled="{Binding CanEditBackground}" />
+            <Button x:Name="BrowseBackgroundImageButton"
+                    Grid.Column="1"
+                    Style="{StaticResource PagesButtonStyle}"
+                    Content="Browse"
+                    AutomationProperties.Name="Browse for a page background image"
+                    IsEnabled="{Binding CanEditBackground}"
+                    Command="{Binding BrowseBackgroundImageCommand}" />
+        </Grid>
+
+        <StackPanel Orientation="Horizontal" Margin="0,6,0,0" Focusable="False">
+            <Button x:Name="ClearBackgroundColorButton"
+                    Style="{StaticResource PagesButtonStyle}"
+                    Content="Clear color"
+                    AutomationProperties.Name="Clear page background color"
+                    IsEnabled="{Binding CanEditBackground}"
+                    Command="{Binding ClearBackgroundColorCommand}" />
+            <Button x:Name="ClearBackgroundImageButton"
+                    Style="{StaticResource PagesButtonStyle}"
+                    Content="Clear image"
+                    Margin="0"
+                    AutomationProperties.Name="Clear page background image"
+                    IsEnabled="{Binding CanEditBackground}"
+                    Command="{Binding ClearBackgroundImageCommand}" />
+        </StackPanel>
+
         <!-- Inline, focus-free confirmation; never a modal window or a MessageBox. -->
         <Border x:Name="RemoveConfirmation"
                 Margin="0,8,0,0"

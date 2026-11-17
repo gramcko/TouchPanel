@@ -167,7 +167,11 @@ public static class PageListOperations
         for (var cursor = 0; cursor < pages.Count; cursor++)
         {
             result[cursor] = cursor == index
-                ? new PageConfig { Id = pages[cursor].Id, Name = normalized, Widgets = pages[cursor].Widgets }
+                ? CopyWith(
+                    pages[cursor],
+                    name: normalized,
+                    background: pages[cursor].Background,
+                    backgroundImage: pages[cursor].BackgroundImage)
                 : pages[cursor];
         }
 
@@ -175,6 +179,66 @@ public static class PageListOperations
         normalizedName = normalized;
         return true;
     }
+
+    /// <summary>
+    /// Sets or clears the optional background color and image of one page, preserving the page id,
+    /// name, widgets, order, and every other page. Values are stored as supplied (trimmed by the
+    /// model); <see cref="ConfigValidator"/> normalizes them on the way through the single-writer
+    /// settings coordinator, so an invalid value is cleared with a warning instead of failing the
+    /// edit. An unknown page leaves the original list untouched.
+    /// </summary>
+    /// <param name="pages">The existing pages; must not be <see langword="null"/>.</param>
+    /// <param name="pageId">The id of the page to edit.</param>
+    /// <param name="background">The desired color text, or <see langword="null"/> to clear it.</param>
+    /// <param name="backgroundImage">The desired absolute image path, or <see langword="null"/> to clear it.</param>
+    /// <param name="updated">The new list, or the original list when the page was not found.</param>
+    /// <returns><see langword="true"/> when the page was found.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="pages"/> is <see langword="null"/>.</exception>
+    public static bool TrySetPageBackground(
+        IReadOnlyList<PageConfig> pages,
+        string pageId,
+        string? background,
+        string? backgroundImage,
+        out IReadOnlyList<PageConfig> updated)
+    {
+        ArgumentNullException.ThrowIfNull(pages);
+
+        updated = pages;
+
+        var index = FindIndex(pages, pageId);
+        if (index < 0)
+        {
+            return false;
+        }
+
+        var result = new PageConfig[pages.Count];
+        for (var cursor = 0; cursor < pages.Count; cursor++)
+        {
+            result[cursor] = cursor == index
+                ? CopyWith(
+                    pages[cursor],
+                    name: pages[cursor].Name,
+                    background: background,
+                    backgroundImage: backgroundImage)
+                : pages[cursor];
+        }
+
+        updated = result;
+        return true;
+    }
+
+    private static PageConfig CopyWith(
+        PageConfig page,
+        string? name,
+        string? background,
+        string? backgroundImage) => new()
+    {
+        Id = page.Id,
+        Name = name,
+        Background = background,
+        BackgroundImage = backgroundImage,
+        Widgets = page.Widgets,
+    };
 
     /// <summary>
     /// Removes one page. The last page is never removed (a panel always needs an active page), and

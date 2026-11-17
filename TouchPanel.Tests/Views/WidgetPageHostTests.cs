@@ -36,7 +36,7 @@ public sealed class WidgetPageHostTests
             var host = new WidgetPageHost { DataContext = page };
             host.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
-            var items = Assert.IsType<ItemsControl>(host.Content);
+            var items = host.WidgetItemsForTest;
             var collectionChanged = 0;
             ((System.Collections.Specialized.INotifyCollectionChanged)items.Items).CollectionChanged +=
                 (_, _) => collectionChanged++;

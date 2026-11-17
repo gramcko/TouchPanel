@@ -284,6 +284,7 @@ public static class ConfigValidator
         }
 
         NormalizePageName(page, diagnostics);
+        NormalizePageBackground(page, diagnostics);
 
         var widgetIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var widget in page.Widgets)
@@ -338,6 +339,57 @@ public static class ConfigValidator
         if (!string.Equals(trimmed, name, StringComparison.Ordinal))
         {
             page.Name = trimmed;
+        }
+    }
+
+    /// <summary>
+    /// Normalizes the optional page background (user-requested addition, additive under schema
+    /// v4): a valid color is normalized to uppercase, an invalid one is cleared with a warning, and
+    /// a background image must be an absolute path to an existing, recognizable raster file or it
+    /// is cleared with a warning. The page itself always stays usable and the load never fails.
+    /// </summary>
+    /// <param name="page">The page whose background is normalized.</param>
+    /// <param name="diagnostics">The diagnostic sink.</param>
+    private static void NormalizePageBackground(PageConfig page, List<ConfigDiagnostic> diagnostics)
+    {
+        var color = page.Background;
+        if (color is not null)
+        {
+            if (WidgetAppearance.TryNormalizeColor(color, out var normalizedColor))
+            {
+                if (!string.Equals(color, normalizedColor, StringComparison.Ordinal))
+                {
+                    page.Background = normalizedColor;
+                }
+            }
+            else
+            {
+                page.Background = null;
+                diagnostics.Add(ConfigDiagnostic.Warning(
+                    "config.page.background",
+                    $"Page '{page.Id}' had an invalid background color; the theme background is used."));
+            }
+        }
+
+        var image = page.BackgroundImage;
+        if (image is null)
+        {
+            return;
+        }
+
+        if (PageBackground.TryNormalizeImagePath(image, out var normalizedImage))
+        {
+            if (!string.Equals(image, normalizedImage, StringComparison.Ordinal))
+            {
+                page.BackgroundImage = normalizedImage;
+            }
+        }
+        else
+        {
+            page.BackgroundImage = null;
+            diagnostics.Add(ConfigDiagnostic.Warning(
+                "config.page.backgroundImage",
+                $"Page '{page.Id}' had a background image that is not an absolute path to a readable image; no image is used."));
         }
     }
 

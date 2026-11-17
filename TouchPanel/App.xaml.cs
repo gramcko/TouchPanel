@@ -1545,7 +1545,8 @@ public partial class App : Application, IPanelConfigApplyTarget
                 session,
                 session,
                 () => Config,
-                logger: _logger);
+                logger: _logger,
+                imagePicker: new ImageFilePicker());
             window.AttachPagesEditor(_editModePagesViewModel);
 
             _logger.Information("Pages: the edit-mode pages surface is ready");
@@ -1859,7 +1860,8 @@ public partial class App : Application, IPanelConfigApplyTarget
                     pageSwitchCoordinator,
                     () => Config,
                     () => _editModeService?.IsEditMode != true,
-                    _logger);
+                    _logger,
+                    new ImageFilePicker());
             }
 
             // M3-RF-850: the Appearance section shares the same single-writer coordinator as every

@@ -34,6 +34,7 @@ public sealed class PageViewModel : INotifyPropertyChanged, IDisposable
         ArgumentNullException.ThrowIfNull(factory);
 
         PageId = page.Id;
+        Background = PageBackgroundViewModel.Create(page);
 
         _widgets = new ObservableCollection<WidgetViewModelBase>();
         foreach (var widget in page.Widgets)
@@ -53,6 +54,14 @@ public sealed class PageViewModel : INotifyPropertyChanged, IDisposable
 
     /// <summary>Gets the id of the rendered page (the resolved <c>activePageId</c>).</summary>
     public string PageId { get; }
+
+    /// <summary>
+    /// Gets the optional background presentation for this page (user-requested addition): a solid
+    /// color and/or a bounded, cached image. The host renders it behind the widgets. Never
+    /// <see langword="null"/>; <see cref="PageBackgroundViewModel.Empty"/> when the page has no
+    /// background, so the theme background shows through as before.
+    /// </summary>
+    public PageBackgroundViewModel Background { get; }
 
     /// <summary>
     /// Gets the widget view models in configuration order. The backing collection is an

@@ -13,23 +13,45 @@
         binds Canvas.Left/Top/Width/Height from each widget view model and the template selector
         maps the view model's template key to its per-type DataTemplate; this host contains no
         per-widget-instance logic.
+
+        The optional per-page background (user-requested addition) renders behind the widgets: a
+        solid color layer, then an image scaled to fill, then the widgets. Both background layers are
+        non-hit-testable and never take focus, so touch, hit-testing, and long-press behavior are
+        unchanged; when neither is set both layers stay empty and the window's theme brush shows
+        through exactly as before.
     -->
 
     <UserControl.Resources>
         <widgets:WidgetTemplateSelector x:Key="WidgetTemplateSelector" />
     </UserControl.Resources>
 
-    <ItemsControl ItemsSource="{Binding Widgets}"
-                  ItemTemplateSelector="{StaticResource WidgetTemplateSelector}"
-                  ItemContainerStyle="{DynamicResource WidgetContainerStyle}"
-                  Focusable="False"
-                  IsTabStop="False"
-                  PreviewMouseLeftButtonDown="OnWidgetPreviewMouseLeftButtonDown">
-        <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-                <Canvas Background="Transparent" />
-            </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-    </ItemsControl>
+    <Grid x:Name="PageBackgroundHost" Background="Transparent">
+        <Border x:Name="PageColorBackground"
+                Background="{Binding Background.ColorBrush}"
+                IsHitTestVisible="False"
+                Focusable="False"
+                SnapsToDevicePixels="True" />
+
+        <Image x:Name="PageImageBackground"
+               Source="{Binding Background.Image}"
+               Stretch="{Binding Background.ImageStretch, FallbackValue=UniformToFill}"
+               IsHitTestVisible="False"
+               Focusable="False"
+               SnapsToDevicePixels="True" />
+
+        <ItemsControl x:Name="WidgetItems"
+                      ItemsSource="{Binding Widgets}"
+                      ItemTemplateSelector="{StaticResource WidgetTemplateSelector}"
+                      ItemContainerStyle="{DynamicResource WidgetContainerStyle}"
+                      Focusable="False"
+                      IsTabStop="False"
+                      PreviewMouseLeftButtonDown="OnWidgetPreviewMouseLeftButtonDown">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <Canvas Background="Transparent" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+        </ItemsControl>
+    </Grid>
 
 </UserControl>

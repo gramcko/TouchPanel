@@ -152,7 +152,7 @@ public sealed class ImageWidgetViewModel : WidgetViewModelBase
 
         try
         {
-            var image = LoadBounded(path);
+            var image = BoundedImageLoader.TryLoad(path, MaxDecodeDimension);
             SetImage(image, hasImage: image is not null);
             if (image is null)
             {
@@ -242,63 +242,6 @@ public sealed class ImageWidgetViewModel : WidgetViewModelBase
         OnPropertyChanged(nameof(DisabledReason));
         OnPropertyChanged(nameof(ShowsDisabledIndicator));
         OnPropertyChanged(nameof(IsInteractable));
-    }
-
-    /// <summary>
-    /// Loads the image bounded to <see cref="MaxDecodeDimension"/> on its longest side. A cheap
-    /// metadata probe (no pixel decode) decides whether to down-scale; when the probe cannot report
-    /// dimensions, the decode is still bounded to the cap.
-    /// </summary>
-    /// <param name="path">The absolute image path.</param>
-    /// <returns>The frozen decoded bitmap, or <see langword="null"/> when the file has no frame.</returns>
-    private static BitmapSource LoadBounded(string path)
-    {
-        var (pixelWidth, pixelHeight) = ProbeDimensions(path);
-
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        var image = new BitmapImage();
-        image.BeginInit();
-        image.CacheOption = BitmapCacheOption.OnLoad;
-        image.StreamSource = stream;
-
-        if (pixelWidth > 0 && pixelHeight > 0)
-        {
-            if (pixelWidth > MaxDecodeDimension || pixelHeight > MaxDecodeDimension)
-            {
-                if (pixelWidth >= pixelHeight)
-                {
-                    image.DecodePixelWidth = MaxDecodeDimension;
-                }
-                else
-                {
-                    image.DecodePixelHeight = MaxDecodeDimension;
-                }
-            }
-        }
-        else
-        {
-            // The probe could not report dimensions; bound the decode unconditionally.
-            image.DecodePixelWidth = MaxDecodeDimension;
-        }
-
-        image.EndInit();
-        image.Freeze();
-        return image;
-    }
-
-    private static (int Width, int Height) ProbeDimensions(string path)
-    {
-        try
-        {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-            var frame = BitmapFrame.Create(stream, BitmapCreateOptions.DelayCreation, BitmapCacheOption.None);
-            return (frame.PixelWidth, frame.PixelHeight);
-        }
-        catch (Exception)
-        {
-            // Some formats may not expose dimensions during a delayed probe; the caller still bounds.
-            return (0, 0);
-        }
     }
 
     private static string? NormalizePath(string? path) =>

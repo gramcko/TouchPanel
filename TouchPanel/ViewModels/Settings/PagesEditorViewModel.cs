@@ -4,6 +4,7 @@ using System.Windows.Input;
 using Serilog;
 using TouchPanel.Config;
 using TouchPanel.Services.Config;
+using TouchPanel.ViewModels.Edit;
 
 namespace TouchPanel.ViewModels.Settings;
 
@@ -41,11 +42,14 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     private readonly IPageSwitchService _switchService;
     private readonly Func<PanelConfig?> _configAccessor;
     private readonly Func<bool> _canManage;
+    private readonly IImageFilePicker? _imagePicker;
     private readonly ILogger _logger;
 
     private IReadOnlyList<PageEditorItem> _pages = [];
     private string? _selectedPageId;
     private string _selectedPageName = string.Empty;
+    private string _backgroundColor = string.Empty;
+    private string _backgroundImage = string.Empty;
     private string _newPageName = string.Empty;
     private bool _isBusy;
     private string? _statusMessage;
@@ -62,13 +66,15 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     /// <param name="configAccessor">Returns the running configuration (re-read after every apply).</param>
     /// <param name="canManage">Gate consulted before structural changes; defaults to always allowed.</param>
     /// <param name="logger">Logger for page-management summaries; defaults to the global Serilog logger.</param>
+    /// <param name="imagePicker">Boundary used by the background image Browse action; optional so the editor still works without a dialog.</param>
     /// <exception cref="ArgumentNullException">Thrown when a required dependency is <see langword="null"/>.</exception>
     public PagesEditorViewModel(
         ISettingsService settings,
         IPageSwitchService switchService,
         Func<PanelConfig?> configAccessor,
         Func<bool>? canManage = null,
-        ILogger? logger = null)
+        ILogger? logger = null,
+        IImageFilePicker? imagePicker = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(switchService);
@@ -79,12 +85,17 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         _configAccessor = configAccessor;
         _canManage = canManage ?? (static () => true);
         _logger = (logger ?? Log.Logger).ForContext<PagesEditorViewModel>();
+        _imagePicker = imagePicker;
 
         AddPageCommand = new AsyncRelayCommand(AddPageAsync);
         RenamePageCommand = new AsyncRelayCommand(RenameSelectedAsync);
         SwitchPageCommand = new AsyncRelayCommand(SwitchToSelectedAsync);
         MovePageUpCommand = new AsyncRelayCommand(MoveSelectedUpAsync);
         MovePageDownCommand = new AsyncRelayCommand(MoveSelectedDownAsync);
+        ApplyBackgroundCommand = new AsyncRelayCommand(ApplyBackgroundAsync);
+        BrowseBackgroundImageCommand = new AsyncRelayCommand(BrowseBackgroundImageAsync);
+        ClearBackgroundColorCommand = new AsyncRelayCommand(ClearBackgroundColorAsync);
+        ClearBackgroundImageCommand = new AsyncRelayCommand(ClearBackgroundImageAsync);
         OpenPageCommand = new OpenPageRowCommand(OpenPageAsync);
         RequestRemoveCommand = new RelayCommand(RequestRemoveSelected);
         RequestRemovePageCommand = new SelectPageRowCommand(RequestRemovePage);
@@ -124,6 +135,28 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         set => SetProperty(ref _newPageName, value ?? string.Empty);
     }
 
+    /// <summary>
+    /// Gets or sets the background color draft for the selected page
+    /// (<c>#RRGGBB</c>/<c>#AARRGGBB</c>; blank clears it). The draft is only persisted by
+    /// <see cref="ApplyBackgroundCommand"/> so a half-typed value never reaches the configuration.
+    /// </summary>
+    public string BackgroundColor
+    {
+        get => _backgroundColor;
+        set => SetProperty(ref _backgroundColor, value ?? string.Empty);
+    }
+
+    /// <summary>
+    /// Gets or sets the background image path draft for the selected page (absolute; blank clears
+    /// it). <see cref="BrowseBackgroundImageCommand"/> fills and applies it; the draft alone does not
+    /// change the running page.
+    /// </summary>
+    public string BackgroundImagePath
+    {
+        get => _backgroundImage;
+        set => SetProperty(ref _backgroundImage, value ?? string.Empty);
+    }
+
     /// <summary>Gets a value indicating whether structural page changes are currently allowed.</summary>
     public bool CanManagePages => _canManage();
 
@@ -141,6 +174,10 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
 
     /// <summary>Gets a value indicating whether the selected page can be made active.</summary>
     public bool CanSwitchToSelected => CanManagePages && HasSelection && SelectedItem?.IsActive == false;
+
+    /// <summary>Gets a value indicating whether the selected page's background can be edited.</summary>
+    public bool CanEditBackground => CanManagePages && HasSelection && !IsBusy;
+
 
     /// <summary>Gets a value indicating whether the selected page can move one position up.</summary>
     public bool CanMoveSelectedUp => CanManagePages && !IsBusy && SelectedIndex > 0;
@@ -171,6 +208,7 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
             {
                 OnPropertyChanged(nameof(CanMoveSelectedUp));
                 OnPropertyChanged(nameof(CanMoveSelectedDown));
+                OnPropertyChanged(nameof(CanEditBackground));
             }
         }
     }
@@ -215,6 +253,18 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
 
     /// <summary>Gets the command that moves the selected page one position down (touch fallback for drag).</summary>
     public ICommand MovePageDownCommand { get; }
+
+    /// <summary>Gets the command that validates and persists the background color/image drafts.</summary>
+    public ICommand ApplyBackgroundCommand { get; }
+
+    /// <summary>Gets the command that chooses an image through the picker and applies it immediately.</summary>
+    public ICommand BrowseBackgroundImageCommand { get; }
+
+    /// <summary>Gets the command that clears the selected page's background color and persists it.</summary>
+    public ICommand ClearBackgroundColorCommand { get; }
+
+    /// <summary>Gets the command that clears the selected page's background image and persists it.</summary>
+    public ICommand ClearBackgroundImageCommand { get; }
 
     /// <summary>Gets the command that opens (makes active) the page id passed as its parameter.</summary>
     public ICommand OpenPageCommand { get; }
@@ -270,6 +320,8 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
             _pages = [];
             _selectedPageId = null;
             _selectedPageName = string.Empty;
+            _backgroundColor = string.Empty;
+            _backgroundImage = string.Empty;
             _isRemoveConfirmationVisible = false;
             _pendingRemovePageId = null;
             _pendingRemovePageName = null;
@@ -280,6 +332,10 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         var activeId = PageSwitchCoordinator.ResolveActivePageId(config);
         _selectedPageId = ResolveSelection(config, preferredSelection, activeId);
         _selectedPageName = ResolveDraftName(config, _selectedPageId);
+        var selectedPage = _selectedPageId is null ? null : config.Pages.Find(page =>
+            string.Equals(page.Id, _selectedPageId, StringComparison.Ordinal));
+        _backgroundColor = selectedPage?.Background ?? string.Empty;
+        _backgroundImage = selectedPage?.BackgroundImage ?? string.Empty;
         _pages = config.Pages
             .Select((page, index) => new PageEditorItem(
                 page.Id,
@@ -550,6 +606,159 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
+    /// Validates and persists the selected page's background color/image drafts through the shared
+    /// single writer. A blank color/image clears that layer; a malformed color or an image that is
+    /// not an absolute path to a readable image is refused inline with a status line (the page is
+    /// never left half-edited). Only the selected page changes; every other page, its widgets,
+    /// order, and every other configuration section are preserved, and the shared apply pipeline
+    /// rebuilds the active page so the new background shows live.
+    /// </summary>
+    /// <returns><see langword="true"/> when the background was saved and applied.</returns>
+    public async Task<bool> ApplyBackgroundAsync()
+    {
+        if (!EnsureCanManage())
+        {
+            return false;
+        }
+
+        var selected = SelectedItem;
+        var config = _configAccessor();
+        if (selected is null || config is null)
+        {
+            SetStatus("Select a page to change its background.", isError: true);
+            return false;
+        }
+
+        string? color = null;
+        if (!string.IsNullOrWhiteSpace(BackgroundColor)
+            && !WidgetAppearance.TryNormalizeColor(BackgroundColor, out color))
+        {
+            SetStatus("Enter a background color as #RRGGBB or #AARRGGBB, or leave it blank.", isError: true);
+            return false;
+        }
+
+        string? image = null;
+        if (!string.IsNullOrWhiteSpace(BackgroundImagePath)
+            && !PageBackground.TryNormalizeImagePath(BackgroundImagePath, out image))
+        {
+            SetStatus("Choose an existing image file with an absolute path, or clear the image.", isError: true);
+            return false;
+        }
+
+        return await ApplyBackgroundValuesAsync(selected.Id, color, image).ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Chooses a background image through the shared image picker and applies it immediately
+    /// together with the current color draft (touch-friendly: no separate confirmation step).
+    /// Canceling leaves the page unchanged.
+    /// </summary>
+    /// <returns><see langword="true"/> when an image was chosen and the background was saved.</returns>
+    public async Task<bool> BrowseBackgroundImageAsync()
+    {
+        if (!EnsureCanManage())
+        {
+            return false;
+        }
+
+        if (_imagePicker is null)
+        {
+            SetStatus("Image browsing is unavailable on this surface.", isError: true);
+            return false;
+        }
+
+        var path = _imagePicker.PickImage();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return false;
+        }
+
+        BackgroundImagePath = path;
+        return await ApplyBackgroundAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>Clears the selected page's background color and persists only the image.</summary>
+    /// <returns><see langword="true"/> when the change was saved.</returns>
+    public Task<bool> ClearBackgroundColorAsync()
+    {
+        var selected = SelectedItem;
+        var config = _configAccessor();
+        if (!EnsureCanManage() || selected is null || config is null)
+        {
+            if (selected is null || config is null)
+            {
+                SetStatus("Select a page to change its background.", isError: true);
+            }
+
+            return Task.FromResult(false);
+        }
+
+        BackgroundColor = string.Empty;
+        var image = FindPage(config, selected.Id)?.BackgroundImage;
+        return ApplyBackgroundValuesAsync(selected.Id, background: null, backgroundImage: image);
+    }
+
+    /// <summary>Clears the selected page's background image and persists only the color.</summary>
+    /// <returns><see langword="true"/> when the change was saved.</returns>
+    public Task<bool> ClearBackgroundImageAsync()
+    {
+        var selected = SelectedItem;
+        var config = _configAccessor();
+        if (!EnsureCanManage() || selected is null || config is null)
+        {
+            if (selected is null || config is null)
+            {
+                SetStatus("Select a page to change its background.", isError: true);
+            }
+
+            return Task.FromResult(false);
+        }
+
+        BackgroundImagePath = string.Empty;
+        var color = FindPage(config, selected.Id)?.Background;
+        return ApplyBackgroundValuesAsync(selected.Id, color, backgroundImage: null);
+    }
+
+    private async Task<bool> ApplyBackgroundValuesAsync(string pageId, string? background, string? backgroundImage)
+    {
+        var config = _configAccessor();
+        if (config is null)
+        {
+            SetStatus("No configuration is available to change.", isError: true);
+            return false;
+        }
+
+        if (!PageListOperations.TrySetPageBackground(
+                config.Pages,
+                pageId,
+                background,
+                backgroundImage,
+                out var pages))
+        {
+            SetStatus("The selected page no longer exists.", isError: true);
+            return false;
+        }
+
+        var applied = await ApplyPagesAsync(pages, PageSwitchCoordinator.ResolveActivePageId(config)).ConfigureAwait(true);
+        if (!applied)
+        {
+            return false;
+        }
+
+        Refresh(pageId);
+        SetStatus("Updated the page background.", isError: false);
+        _logger.Information(
+            "Pages: updated the background of {PageId}; HasColor={HasColor} HasImage={HasImage}",
+            pageId,
+            !string.IsNullOrWhiteSpace(background),
+            !string.IsNullOrWhiteSpace(backgroundImage));
+        return true;
+    }
+
+    private static PageConfig? FindPage(PanelConfig config, string pageId) =>
+        config.Pages.Find(page => string.Equals(page.Id, pageId, StringComparison.Ordinal));
+
+    /// <summary>
     /// Selects the supplied page row and opens the inline remove confirmation for it. The last page
     /// is never removed; the call is refused with a status line instead.
     /// </summary>
@@ -806,6 +1015,9 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanSwitchToSelected));
         OnPropertyChanged(nameof(CanMoveSelectedUp));
         OnPropertyChanged(nameof(CanMoveSelectedDown));
+        OnPropertyChanged(nameof(CanEditBackground));
+        OnPropertyChanged(nameof(BackgroundColor));
+        OnPropertyChanged(nameof(BackgroundImagePath));
     }
 
     private bool SetProperty<T>(ref T field, T value, [CallerMemberName] string? propertyName = null)
