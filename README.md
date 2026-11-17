@@ -59,6 +59,25 @@ Run the test suite:
 dotnet test TouchPanel.sln
 ```
 
+## First run
+
+On the **first launch** — when `%APPDATA%\TouchPanel\panel.json` does not exist yet — TouchPanel opens a **setup window** instead of placing the panel immediately:
+
+- **Choose the monitor** the panel should appear on from the detected monitors (the primary is preselected). Each entry shows its name, resolution, and identity summary, and the primary is marked.
+- **Choose whether TouchPanel starts with Windows** (per-user, no elevation).
+
+**Save and continue** writes the choice with the usual atomic save and applies it: the monitor identity is stored in `monitor.match` with `monitor.fallback` set to `none`, and the start-with-Windows option is applied immediately.
+
+The wizard is shown only once. Afterwards, change the monitor from **Settings… → monitor picker** (or edit `monitor.match` in `panel.json` by hand), and change the startup option from Settings or in the configuration.
+
+**Skip** (or closing the window) saves nothing and continues with the generated defaults — an unmatched monitor placed on the primary display — and the app starts normally.
+
+To run the setup again, close TouchPanel (tray **Exit**) and delete or move `%APPDATA%\TouchPanel\panel.json`; the next launch shows the wizard again. Back the file up first if you want to keep the current layout.
+
+If no monitor is detected, the monitor choice is skipped (a short message says so) but **Start with Windows** is still available and is applied as chosen.
+
+The setup window is a normal activating window shown deliberately on first run only; the panel itself still never steals focus in normal mode.
+
 ## Usage
 
 ### Tray menu
