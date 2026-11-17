@@ -23,6 +23,12 @@ public enum TrayMenuCommand
     /// </summary>
     Hotkeys,
 
+    /// <summary>
+    /// Open the About / version window (user request), a deliberate activating window like Settings
+    /// and Hotkeys. Opening it never changes the panel's no-activate behavior.
+    /// </summary>
+    About,
+
     /// <summary>Open the resolved configuration directory in Explorer (RF-005).</summary>
     OpenConfigurationFolder,
 

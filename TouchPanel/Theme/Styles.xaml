@@ -34,6 +34,78 @@
     </Style>
 
     <!--
+        User-requested default button chrome fix (About-window hover contrast). The stock WPF Button
+        template replaces the themed Background with a light system hover brush, which made the light
+        themed label unreadable on hover in every dark-ish theme. This template drops the system
+        chrome entirely: surface/border/foreground come from the Button (so a style can override
+        them, as AboutLinkButtonStyle does), hover uses the themed pressed surface (a dark elevation
+        step in the dark palettes, a readable gray in light) plus the accent border, press uses the
+        disabled surface, and the disabled state uses the shared disabled surface/foreground. Every
+        brush is a DynamicResource, so a live theme swap re-resolves it in all six built-in themes
+        (dark/light/highContrast/midnight/nord/oled).
+    -->
+    <ControlTemplate x:Key="ThemedButtonTemplate" TargetType="Button">
+        <Border x:Name="Surface"
+                Background="{TemplateBinding Background}"
+                BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="{TemplateBinding BorderThickness}"
+                CornerRadius="8"
+                SnapsToDevicePixels="True">
+            <ContentPresenter Margin="{TemplateBinding Padding}"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                              RecognizesAccessKey="True" />
+        </Border>
+        <ControlTemplate.Triggers>
+            <!-- Hover: the light stock system highlight is gone; the themed pressed surface and the
+                 accent border keep the (theme) foreground readable in every palette. -->
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+            </Trigger>
+            <!-- Press: one step below the surface, accent border kept as the immediate feedback. -->
+            <Trigger Property="IsPressed" Value="True">
+                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource WidgetDisabledBrush}" />
+                <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+            </Trigger>
+            <!-- Declared last so a disabled button never looks hovered or pressed. Template triggers
+                 outrank style setters, so this foreground reaches BasedOn styles too. -->
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="Surface" Property="Background" Value="{DynamicResource WidgetDisabledBrush}" />
+                <Setter TargetName="Surface" Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelDisabledForegroundBrush}" />
+            </Trigger>
+        </ControlTemplate.Triggers>
+    </ControlTemplate>
+
+    <!--
+        Shared themed button base. About/settings-style dialogs used the stock control chrome; this
+        is the single definition the implicit style and the window styles build on.
+    -->
+    <Style x:Key="ThemedButtonStyle" TargetType="Button">
+        <Setter Property="MinWidth" Value="40" />
+        <Setter Property="MinHeight" Value="40" />
+        <Setter Property="Padding" Value="12,6" />
+        <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+        <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="Template" Value="{StaticResource ThemedButtonTemplate}" />
+    </Style>
+
+    <!--
+        Implicit app-wide Button style: any unstyled button (About, Settings, Pages, Hotkeys, First
+        Run, monitor picker) gets the themed surface instead of the stock light chrome. Explicit
+        styles that already ship their own Template (TouchButtonStyle, EditToolbarButtonStyle,
+        PagesButtonStyle, ...) are unaffected; styles that only set colors build on this one.
+    -->
+    <Style TargetType="Button" BasedOn="{StaticResource ThemedButtonStyle}" />
+
+    <!--
         T-10 touch-first widget styles (RF-030/RF-031/RNF-009, DD-13): interactive templates default
         to at least 40x40 DIP, press feedback is trigger-based and immediate (no animation), and no
         primary affordance depends on hover. Disabled widgets keep their geometry and show the

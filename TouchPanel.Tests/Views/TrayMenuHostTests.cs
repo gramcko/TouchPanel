@@ -74,6 +74,26 @@ public sealed class TrayMenuHostTests
     }
 
     [Fact]
+    public async Task BuildMenu_MapsTheAboutItemToAnEnabledMenuItem()
+    {
+        using var sta = new StaThread();
+        var items = new List<TrayMenuItem>
+        {
+            new(TrayMenuCommand.About, "About TouchPanel…"),
+        };
+
+        await sta.InvokeAsync(() =>
+        {
+            var menu = TrayMenuHost.BuildMenu(items, _ => { });
+            var about = Assert.IsType<MenuItem>(Assert.Single(menu.Items));
+
+            Assert.Equal("About TouchPanel…", about.Header);
+            Assert.True(about.IsEnabled);
+            Assert.False(about.IsCheckable);
+        });
+    }
+
+    [Fact]
     public async Task BuildMenu_WithAnEmptyModel_ProducesAnEmptyMenu()
     {
         using var sta = new StaThread();

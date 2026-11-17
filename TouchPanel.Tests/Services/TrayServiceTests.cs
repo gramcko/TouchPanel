@@ -421,6 +421,43 @@ public sealed class TrayServiceTests
     }
 
     [Fact]
+    public void AboutItem_IsComposedAfterHotkeysAndBeforeTheFolderCommand()
+    {
+        // User-requested About window: the composition root adds it through the same SetMenuItem
+        // seam used by Settings and Hotkeys, after Hotkeys and before the folder/exit items.
+        var (service, _, _) = CreateService(new FakeTrayIcon());
+
+        try
+        {
+            service.SetMenuItem(new TrayMenuItem(TrayMenuCommand.EditMode, "Edit Mode", IsCheckable: true), index: 1);
+            service.SetMenuItem(new TrayMenuItem(TrayMenuCommand.Settings, "Settings…"), index: 2);
+            service.SetMenuItem(new TrayMenuItem(TrayMenuCommand.Hotkeys, "Hotkeys…"), index: 3);
+            service.SetMenuItem(new TrayMenuItem(TrayMenuCommand.About, "About TouchPanel…"), index: 4);
+
+            var items = service.GetMenuItems();
+
+            Assert.Equal(7, items.Count);
+            Assert.Equal(TrayMenuCommand.Hotkeys, items[3].Command);
+            Assert.Equal(TrayMenuCommand.About, items[4].Command);
+            Assert.Equal("About TouchPanel…", items[4].Text);
+            Assert.True(items[4].IsEnabled);
+            Assert.False(items[4].IsCheckable);
+            Assert.Equal(TrayMenuCommand.OpenConfigurationFolder, items[5].Command);
+            Assert.Equal(TrayMenuCommand.Exit, items[6].Command);
+
+            var selected = new List<TrayMenuCommand>();
+            service.CommandSelected += (_, e) => selected.Add(e.Command);
+            service.SelectCommand(TrayMenuCommand.About);
+
+            Assert.Equal(new[] { TrayMenuCommand.About }, selected);
+        }
+        finally
+        {
+            service.Dispose();
+        }
+    }
+
+    [Fact]
     public void EditModeToggle_IsAddedAsCheckableAfterShowHideAndItsStateCanBeUpdated()
     {
         // T-12/RF-005/RF-026: the composition root adds the Edit Mode item through the existing

@@ -14,7 +14,7 @@ TouchPanel renders a configurable grid of touch widgets on a monitor of your cho
 - **Live telemetry** at ~1 Hz (CPU/GPU/RAM/disk/network, temperatures and fan speeds via LibreHardwareMonitor — optional), with a configurable polling interval.
 - **Themes** (dark / light / high-contrast / midnight / nord / OLED) plus accent colour and icon packs, with per-widget appearance overrides.
 - **Edit mode**: add/remove/duplicate widgets, move/resize, property and action editors with executable browse, and grid snap with alignment guides.
-- **System tray** lifecycle with Show/Hide Panel, Edit Mode, Settings…, Hotkeys…, Open Configuration Folder, and Exit.
+- **System tray** lifecycle with Show/Hide Panel, Edit Mode, Settings…, Hotkeys…, About TouchPanel…, Open Configuration Folder, and Exit.
 - **Start with Windows** (per-user, no elevation) and **single instance** (`--exit`/second launch signals the running instance).
 - **JSON configuration** with schema versioning, ordered migrations, atomic save, and backup/recovery.
 - **Hot reload** — edit `panel.json` while the app runs and valid changes apply live.

@@ -20,6 +20,7 @@ using TouchPanel.Services.Appearance;
 using TouchPanel.Services.Config;
 using TouchPanel.Services.Display;
 using TouchPanel.Services.Health;
+using TouchPanel.Services.Links;
 using TouchPanel.Services.Logging;
 using TouchPanel.Services.Monitors;
 using TouchPanel.Services.Notifications;
@@ -29,12 +30,15 @@ using TouchPanel.Services.SingleInstance;
 using TouchPanel.Services.Startup;
 using TouchPanel.Services.Time;
 using TouchPanel.Services.Tray;
+using TouchPanel.Services.Updates;
 using TouchPanel.Theme;
 using TouchPanel.ViewModels;
+using TouchPanel.ViewModels.About;
 using TouchPanel.ViewModels.Hotkeys;
 using TouchPanel.ViewModels.Settings;
 using TouchPanel.ViewModels.Setup;
 using TouchPanel.Views;
+using TouchPanel.Views.About;
 using TouchPanel.Views.Edit;
 using TouchPanel.Views.Hotkeys;
 using TouchPanel.Views.Settings;
@@ -86,6 +90,7 @@ public partial class App : Application, IPanelConfigApplyTarget
     private bool _isFirstRun;
     private SettingsWindow? _settingsWindow;
     private HotkeysEditorWindow? _hotkeysEditorWindow;
+    private AboutWindow? _aboutWindow;
     private AppearanceState? _appearanceState;
     private ThemeManager? _themeManager;
     private ClockCultureSource? _clockCulture;
@@ -467,6 +472,13 @@ public partial class App : Application, IPanelConfigApplyTarget
             _trayService.SetMenuItem(
                 new TrayMenuItem(TrayMenuCommand.Hotkeys, "Hotkeys…"),
                 index: 3);
+
+            // User-requested: the About / version window, placed after Hotkeys and before the
+            // configuration folder. Opening it performs no network work; the manual update check
+            // only runs when the user presses its button.
+            _trayService.SetMenuItem(
+                new TrayMenuItem(TrayMenuCommand.About, "About TouchPanel…"),
+                index: 4);
 
             _trayMenuHost = new TrayMenuHost(_trayService);
 
@@ -1715,6 +1727,9 @@ public partial class App : Application, IPanelConfigApplyTarget
                 case TrayMenuCommand.Hotkeys:
                     OpenHotkeysEditor();
                     break;
+                case TrayMenuCommand.About:
+                    OpenAbout();
+                    break;
                 case TrayMenuCommand.OpenConfigurationFolder:
                     _ = OpenConfigurationFolderAsync();
                     break;
@@ -1943,6 +1958,47 @@ public partial class App : Application, IPanelConfigApplyTarget
             Notifier.Notify(
                 "TouchPanel",
                 "The hotkey editor could not be opened.",
+                NotificationSeverity.Warning);
+        }
+    }
+
+    /// <summary>
+    /// Opens the About / version window (user request). This is a deliberate activating surface like
+    /// Settings and Hotkeys; it never changes the panel's normal no-activate behavior. The window
+    /// performs no network work on open: the update check runs only when the user presses its
+    /// "Check for updates" button, through the injectable <see cref="IUpdateCheckService"/> seam.
+    /// A failure is isolated and notified.
+    /// </summary>
+    private void OpenAbout()
+    {
+        try
+        {
+            if (_aboutWindow is { IsLoaded: true })
+            {
+                _aboutWindow.Activate();
+                return;
+            }
+
+            var updateCheck = new GitHubUpdateCheckService(AppInfo.CurrentVersion, logger: _logger);
+            var viewModel = new AboutViewModel(updateCheck, new ShellUrlLauncher(), _logger);
+
+            var window = new AboutWindow(viewModel);
+            window.Closed += (_, _) => _aboutWindow = null;
+            _aboutWindow = window;
+
+            // Deliberate activating window; the panel keeps its WS_EX_NOACTIVATE state.
+            window.Show();
+            window.Activate();
+
+            _logger.Information("About: the about window was opened");
+        }
+        catch (Exception ex)
+        {
+            // A failure building or showing the window must not affect the panel or the tray.
+            _logger.Warning(ex, "About: opening the about window failed");
+            Notifier.Notify(
+                "TouchPanel",
+                "The about window could not be opened.",
                 NotificationSeverity.Warning);
         }
     }
