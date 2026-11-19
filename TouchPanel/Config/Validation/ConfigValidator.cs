@@ -22,6 +22,11 @@ namespace TouchPanel.Config.Validation;
 /// unknown enum sentinels are replaced by safe defaults, and an empty page list gains the
 /// generated default page. Every normalization is reported through a diagnostic with a stable
 /// code.</para>
+/// <para><b>Rate scale.</b> The one silent normalization: a Bar/Gauge bound to a bytes-per-second
+/// sensor whose range is still the untouched 0–100 default adopts 0–12,500,000 B/s (100 Mbps),
+/// because rates are published in bytes per second and a 0–100 scale would pin the meter at 100%.
+/// It is not a finding the user can act on, so it emits no diagnostic; an explicit range is never
+/// touched (see <see cref="ShouldUseRateDefaultRange"/>).</para>
 /// <para><b>Page bounds.</b> Schema v1 has no page-size field, so load-time clamping uses
 /// <see cref="MaxWidgetExtent"/> as the maximum supported panel extent. The runtime host still
 /// clamps against the actual monitor bounds (T-08/T-12).</para>
@@ -36,6 +41,30 @@ public static class ConfigValidator
 
     /// <summary>Minimum useful span of a gauge display range.</summary>
     public const double MinGaugeSpan = 1;
+
+    /// <summary>
+    /// The untouched default lower bound of a bar/gauge display range (identical to
+    /// <see cref="BarWidgetConfig.DefaultMinimum"/> and <see cref="GaugeWidgetConfig.DefaultMinimum"/>).
+    /// </summary>
+    public const double DefaultRangeMinimum = 0;
+
+    /// <summary>
+    /// The untouched default upper bound of a bar/gauge display range (identical to
+    /// <see cref="BarWidgetConfig.DefaultMaximum"/> and <see cref="GaugeWidgetConfig.DefaultMaximum"/>).
+    /// </summary>
+    public const double DefaultRangeMaximum = 100;
+
+    /// <summary>
+    /// Lower bound of the unit-aware default range adopted for a bytes-per-second bar/gauge.
+    /// </summary>
+    public const double DefaultRateMinimum = 0;
+
+    /// <summary>
+    /// Upper bound of the unit-aware default range adopted for a bytes-per-second bar/gauge:
+    /// 12,500,000 bytes/s (100 Mbps). Rates are published in bytes per second (millions for any real
+    /// network traffic), so the untouched 0–100 default would pin the meter at 100% forever.
+    /// </summary>
+    public const double DefaultRateMaximum = 12_500_000;
 
     /// <summary>Sane upper magnitude for gauge range endpoints.</summary>
     public const double MaxGaugeMagnitude = 1e9;
@@ -628,11 +657,20 @@ public static class ConfigValidator
 
         if (!valid)
         {
-            gauge.Minimum = 0;
-            gauge.Maximum = 100;
+            gauge.Minimum = GaugeWidgetConfig.DefaultMinimum;
+            gauge.Maximum = GaugeWidgetConfig.DefaultMaximum;
             diagnostics.Add(ConfigDiagnostic.Warning(
                 "config.widget.gauge.range",
                 $"Gauge '{gauge.Id}' had an invalid display range and was reset to 0–100."));
+        }
+
+        // Rate sensors (net/disk) publish bytes per second, so the untouched default range would show
+        // 100% for any real traffic; see ShouldUseRateDefaultRange. Silent on purpose and never
+        // applied to an explicit non-default range.
+        if (ShouldUseRateDefaultRange(gauge.Sensor, gauge.Minimum, gauge.Maximum))
+        {
+            gauge.Minimum = DefaultRateMinimum;
+            gauge.Maximum = DefaultRateMaximum;
         }
     }
 
@@ -848,6 +886,61 @@ public static class ConfigValidator
                 $"Bar '{bar.Id}' had an invalid display range and was reset to "
                 + $"{Format(BarWidgetConfig.DefaultMinimum)}–{Format(BarWidgetConfig.DefaultMaximum)}."));
         }
+
+        // User-reported fix: net.down/net.up (and disk read/write) publish bytes per second — millions
+        // for any real traffic — so a bar still carrying the untouched 0–100 default pinned itself at
+        // 100%. Adopt the unit-aware 0–100 Mbps default instead. This is a silent normalization (no
+        // diagnostic: nothing for the user to act on, the persisted file simply agrees) and an
+        // explicit non-default range is never touched.
+        if (ShouldUseRateDefaultRange(bar.Sensor, bar.Minimum, bar.Maximum))
+        {
+            bar.Minimum = DefaultRateMinimum;
+            bar.Maximum = DefaultRateMaximum;
+        }
+    }
+
+    /// <summary>
+    /// Resolves whether a Bar/Gauge bound to <paramref name="sensorKey"/> should adopt the unit-aware
+    /// default range instead of the untouched 0–100 default. True only when the configured range is
+    /// still exactly <see cref="DefaultRangeMinimum"/>–<see cref="DefaultRangeMaximum"/> <em>and</em>
+    /// the sensor resolves to <see cref="SensorUnit.BytesPerSecond"/>. Unknown/missing sensors, every
+    /// other unit (percent, °C, RPM, MHz, V, W, bytes), and any explicit range return
+    /// <see langword="false"/> so the caller never rewrites a deliberate scale.
+    /// </summary>
+    /// <param name="sensorKey">The configured sensor key; may be <see langword="null"/>.</param>
+    /// <param name="minimum">The configured range lower bound.</param>
+    /// <param name="maximum">The configured range upper bound.</param>
+    /// <returns><see langword="true"/> when the range should become 0–12,500,000 bytes/s.</returns>
+    public static bool ShouldUseRateDefaultRange(string? sensorKey, double minimum, double maximum) =>
+        minimum.Equals(DefaultRangeMinimum)
+        && maximum.Equals(DefaultRangeMaximum)
+        && IsRateSensor(sensorKey);
+
+    /// <summary>
+    /// Gets a value indicating whether <paramref name="sensorKey"/> resolves to a sensor that
+    /// publishes <see cref="SensorUnit.BytesPerSecond"/> (network and disk throughput). Unknown and
+    /// missing keys are not rate sensors.
+    /// </summary>
+    /// <param name="sensorKey">The configured sensor key; may be <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> for a known bytes-per-second sensor key.</returns>
+    public static bool IsRateSensor(string? sensorKey) =>
+        TryResolveUnit(sensorKey, out var unit) && unit == SensorUnit.BytesPerSecond;
+
+    /// <summary>
+    /// Resolves the unit a sensor key publishes without hardware access (the unit is fixed by the
+    /// key, only the value is unavailable). Missing and unknown keys resolve nothing.
+    /// </summary>
+    private static bool TryResolveUnit(string? sensorKey, out SensorUnit unit)
+    {
+        if (!string.IsNullOrWhiteSpace(sensorKey)
+            && SensorSnapshot.CreateUnavailable(DateTimeOffset.UnixEpoch).TryGetReading(sensorKey.Trim(), out var reading))
+        {
+            unit = reading.Unit;
+            return true;
+        }
+
+        unit = SensorUnit.Percent;
+        return false;
     }
 
     /// <summary>

@@ -3,6 +3,7 @@ using System.Windows.Controls;
 using System.Windows.Threading;
 using TouchPanel.Tests.TestSupport;
 using TouchPanel.ViewModels.Setup;
+using TouchPanel.Views.Controls;
 using TouchPanel.Views.Setup;
 
 namespace TouchPanel.Tests.Views;
@@ -44,6 +45,11 @@ public sealed class FirstRunSetupWindowTests
                     SaveMinHeight = save.MinHeight,
                     SkipMinHeight = skip.MinHeight,
                     EmptyTextVisibility = emptyText.Visibility,
+                    // Touch panning (user-reported fix, applied for consistency): the monitor list uses
+                    // the custom touch behavior, so a vertical drag that starts on a row scrolls it.
+                    MonitorListTouchPan = TouchPan.GetIsEnabled(list),
+                    MonitorListPanningMode = ScrollViewer.GetPanningMode(list),
+                    MonitorListHorizontalVisibility = ScrollViewer.GetHorizontalScrollBarVisibility(list),
                 };
             }
             finally
@@ -59,6 +65,9 @@ public sealed class FirstRunSetupWindowTests
         Assert.True(snapshot.SaveMinHeight >= 40);
         Assert.True(snapshot.SkipMinHeight >= 40);
         Assert.Equal(Visibility.Collapsed, snapshot.EmptyTextVisibility);
+        Assert.True(snapshot.MonitorListTouchPan);
+        Assert.Equal(PanningMode.None, snapshot.MonitorListPanningMode);
+        Assert.Equal(ScrollBarVisibility.Disabled, snapshot.MonitorListHorizontalVisibility);
     }
 
     [Fact]

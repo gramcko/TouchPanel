@@ -1,4 +1,5 @@
 using TouchPanel.Config;
+using TouchPanel.Config.Validation;
 using TouchPanel.Monitoring;
 using TouchPanel.Tests.Monitoring;
 using TouchPanel.Tests.TestSupport;
@@ -198,6 +199,56 @@ public sealed class BarWidgetTests
         source.Publish(Network(1048576));
         Assert.Equal(1048576, bar.Value);
         Assert.Equal("1 MB/s", bar.ValueText);
+    }
+
+    [Fact]
+    public void RateSensor_WithTheRateDefaultScale_DoesNotPinTheBarAtFull()
+    {
+        // User-reported bug: net.down publishes bytes/s, so the untouched 0–100 range clamped every
+        // real reading to 100%. The normalized 0–12,500,000 B/s (100 Mbps) scale keeps the fill
+        // proportional across the useful range.
+        var source = new FakeSnapshotSource();
+        var bar = new BarWidgetViewModel(
+            CreateConfig(sensor: SensorKeys.NetworkDown, minimum: 0, maximum: ConfigValidator.DefaultRateMaximum),
+            source);
+
+        source.Publish(Network(1024));
+        Assert.Equal(1024d / 12_500_000d * 100d, bar.Progress, precision: 9);
+
+        source.Publish(Network(500 * 1024));
+        Assert.Equal(4.096, bar.Progress, precision: 6);
+
+        source.Publish(Network(12_500_000));
+        Assert.Equal(100, bar.Progress);
+
+        source.Publish(Network(20_000_000));
+        Assert.Equal(100, bar.Progress);
+        Assert.Equal(20_000_000, bar.Value);
+    }
+
+    [Fact]
+    public void RateSensor_ThroughTheValidator_ProducesAProportionalFill()
+    {
+        // The exact shape the user reported: a bar with net.down and no explicit range. Validation
+        // normalizes the scale, so the live view model built from the validated config is not full.
+        var barConfig = CreateConfig(sensor: SensorKeys.NetworkDown);
+        var panel = new PanelConfig
+        {
+            SchemaVersion = PanelConfig.CurrentSchemaVersion,
+            ActivePageId = "main",
+            Pages = [new PageConfig { Id = "main", Widgets = [barConfig] }],
+        };
+
+        var diagnostics = ConfigValidator.Validate(panel);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.bar.range");
+
+        var source = new FakeSnapshotSource();
+        var bar = new BarWidgetViewModel(barConfig, source);
+
+        Assert.Equal(ConfigValidator.DefaultRateMaximum, bar.Maximum);
+
+        source.Publish(Network(500 * 1024));
+        Assert.Equal(4.096, bar.Progress, precision: 6);
     }
 
     [Fact]

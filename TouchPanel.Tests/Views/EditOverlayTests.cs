@@ -8,6 +8,7 @@ using TouchPanel.Config;
 using TouchPanel.Tests.TestSupport;
 using TouchPanel.ViewModels;
 using TouchPanel.Views;
+using TouchPanel.Views.Controls;
 using TouchPanel.Widgets;
 
 namespace TouchPanel.Tests.Views;
@@ -709,6 +710,67 @@ public sealed class EditOverlayTests
         Assert.True(
             padding.Right >= 16,
             $"The property panel must reserve right padding for the scrollbar; was {padding.Right}.");
+    }
+
+    [Fact]
+    public async Task Overlay_EditPanelsUseTheTouchPanBehaviorAndThePaletteStaysHorizontal()
+    {
+        // User-reported fix: in edit mode the property editor and the pages surface only scrolled by
+        // dragging the scrollbar thumb, and a drag that started on a field did nothing. Both now use
+        // the custom touch pan behavior (which consumes vertical drags over fields), and the built-in
+        // PanningMode is no longer set on them so there is a single pan mechanism. The horizontal
+        // palette widget strip is unchanged (PanningMode HorizontalOnly).
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var registry = WidgetRegistry.CreateDefault();
+            var config = ConfigWithGauge();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            service.Enter(1024, 600);
+            service.SelectWidget(page.Widgets[0]);
+            service.OpenPropertyEditor();
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var panel = Assert.IsType<Border>(overlay.FindName("PropertyPanel"));
+            var contentControl = Assert.IsType<ContentControl>(panel.Child);
+            var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
+            content.DataContext = contentControl.Content;
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var propertyScroll = Assert.IsType<ScrollViewer>(content.FindName("PropertyPanelScroll"));
+            var pagesScroll = Assert.IsType<ScrollViewer>(overlay.FindName("PagesPanelScroll"));
+            var paletteScroll = Assert.IsType<ScrollViewer>(overlay.FindName("PaletteScroll"));
+
+            return (
+                Property: (TouchPan: TouchPan.GetIsEnabled(propertyScroll), Panning: propertyScroll.PanningMode, Horizontal: propertyScroll.HorizontalScrollBarVisibility, Vertical: propertyScroll.VerticalScrollBarVisibility, Focusable: propertyScroll.Focusable),
+                Pages: (TouchPan: TouchPan.GetIsEnabled(pagesScroll), Panning: pagesScroll.PanningMode, Horizontal: pagesScroll.HorizontalScrollBarVisibility, Vertical: pagesScroll.VerticalScrollBarVisibility, Focusable: pagesScroll.Focusable),
+                Palette: (Panning: paletteScroll.PanningMode, Horizontal: paletteScroll.HorizontalScrollBarVisibility, Vertical: paletteScroll.VerticalScrollBarVisibility),
+                IsEditMode: service.IsEditMode);
+        });
+
+        Assert.True(result.IsEditMode, "The panning fix must not leave edit mode.");
+        Assert.True(result.Property.TouchPan);
+        Assert.Equal(PanningMode.None, result.Property.Panning);
+        Assert.Equal(ScrollBarVisibility.Disabled, result.Property.Horizontal);
+        Assert.Equal(ScrollBarVisibility.Auto, result.Property.Vertical);
+        Assert.False(result.Property.Focusable, "Panning must not require keyboard focus.");
+
+        Assert.True(result.Pages.TouchPan);
+        Assert.Equal(PanningMode.None, result.Pages.Panning);
+        Assert.Equal(ScrollBarVisibility.Disabled, result.Pages.Horizontal);
+        Assert.Equal(ScrollBarVisibility.Auto, result.Pages.Vertical);
+        Assert.False(result.Pages.Focusable, "Panning must not require keyboard focus.");
+
+        // The palette is horizontal by design and must stay that way.
+        Assert.Equal(PanningMode.HorizontalOnly, result.Palette.Panning);
+        Assert.Equal(ScrollBarVisibility.Auto, result.Palette.Horizontal);
+        Assert.Equal(ScrollBarVisibility.Disabled, result.Palette.Vertical);
     }
 
     [Fact]

@@ -1,6 +1,7 @@
 <UserControl x:Class="TouchPanel.Views.Settings.PagesEditorView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:TouchPanel.Views.Controls"
              Focusable="False"
              IsTabStop="False">
 
@@ -131,10 +132,17 @@
         <!-- Page list: tap a row to select; drag a row up/down to reorder; Open makes it active;
              Remove asks for confirmation. The drop caret overlays the list while dragging. -->
         <Grid x:Name="PageListHost" Margin="0,8,0,0">
+            <!--
+                The rows own a vertical drag-to-reorder gesture, so panning is excluded for a touch
+                that starts inside the list. A pan in the pages surface still starts from the panel
+                chrome, the fields, and every other area; Move up / Move down remain the touch
+                fallback for reordering.
+            -->
             <ItemsControl x:Name="PageItems"
                           ItemsSource="{Binding Pages}"
                           Focusable="False"
                           IsTabStop="False"
+                          controls:TouchPan.IsPanExcluded="True"
                           PreviewMouseLeftButtonDown="OnPageListPreviewMouseLeftButtonDown"
                           PreviewMouseMove="OnPageListPreviewMouseMove"
                           PreviewMouseLeftButtonUp="OnPageListPreviewMouseLeftButtonUp"

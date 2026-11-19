@@ -25,7 +25,10 @@ namespace TouchPanel.Views;
 /// <para>
 /// Nothing here activates the window or changes focus, so normal mode stays non-activating. When
 /// <see cref="IsPagingEnabled"/> reports <see langword="false"/> (edit mode, set by the composition
-/// root) the tracker is canceled and the edit overlay keeps its drag/resize gestures untouched.
+/// root) the tracker is canceled and the edit overlay keeps its drag/resize gestures untouched. Each
+/// handler checks the gate before touching the event, so nothing is marked handled while paging is
+/// disabled and the edit panels' touch panning (the property/pages <c>ScrollViewer</c>s) receives the
+/// drag intact.
 /// </para>
 /// </remarks>
 public partial class PageSwitcherView : UserControl

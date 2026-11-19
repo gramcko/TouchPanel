@@ -7,6 +7,7 @@ using TouchPanel.Input;
 using TouchPanel.Services.Notifications;
 using TouchPanel.Tests.TestSupport;
 using TouchPanel.ViewModels.Hotkeys;
+using TouchPanel.Views.Controls;
 using TouchPanel.Views.Hotkeys;
 
 namespace TouchPanel.Tests.Views;
@@ -105,6 +106,48 @@ public sealed class HotkeysEditorWindowTests
         });
 
         Assert.Equal(Visibility.Collapsed, visible);
+    }
+
+    [Fact]
+    public async Task HotkeysEditorWindow_ListsAndDraftScrollWithTouchPanning()
+    {
+        // User-reported fix, applied for consistency: the entries and the draft fields scroll with a
+        // vertical touch drag starting anywhere over them, including on a check box label or a combo
+        // box. The custom touch behavior is the single mechanism; the built-in PanningMode is not set.
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var window = new HotkeysEditorWindow(CreateViewModel(hotkeysAvailable: false));
+            try
+            {
+                window.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                var list = Assert.IsType<ListView>(window.FindName("HotkeyList"));
+                var draft = Assert.IsType<ScrollViewer>(window.FindName("HotkeyDraftScroll"));
+                return (
+                    ListTouchPan: TouchPan.GetIsEnabled(list),
+                    ListPanningMode: ScrollViewer.GetPanningMode(list),
+                    ListHorizontalVisibility: ScrollViewer.GetHorizontalScrollBarVisibility(list),
+                    ListVerticalVisibility: ScrollViewer.GetVerticalScrollBarVisibility(list),
+                    DraftTouchPan: TouchPan.GetIsEnabled(draft),
+                    DraftPanningMode: draft.PanningMode,
+                    DraftHorizontalVisibility: draft.HorizontalScrollBarVisibility,
+                    DraftVerticalVisibility: draft.VerticalScrollBarVisibility);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.True(result.ListTouchPan);
+        Assert.Equal(PanningMode.None, result.ListPanningMode);
+        Assert.Equal(ScrollBarVisibility.Disabled, result.ListHorizontalVisibility);
+        Assert.Equal(ScrollBarVisibility.Auto, result.ListVerticalVisibility);
+        Assert.True(result.DraftTouchPan);
+        Assert.Equal(PanningMode.None, result.DraftPanningMode);
+        Assert.Equal(ScrollBarVisibility.Disabled, result.DraftHorizontalVisibility);
+        Assert.Equal(ScrollBarVisibility.Auto, result.DraftVerticalVisibility);
     }
 
     private static HotkeysEditorViewModel CreateViewModel(bool hotkeysAvailable)

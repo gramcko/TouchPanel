@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:monitorPicker="clr-namespace:TouchPanel.Views.MonitorPicker"
         xmlns:settingsViews="clr-namespace:TouchPanel.Views.Settings"
+        xmlns:controls="clr-namespace:TouchPanel.Views.Controls"
         Title="TouchPanel Settings"
         Width="600"
         Height="760"
@@ -57,7 +58,18 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!--
+            Touch panning (user-reported fix): a vertical drag starting anywhere over the settings
+            content scrolls the window, including on a field, its text, or a check box label. The
+            custom touch-only behavior is the single pan mechanism, so the built-in PanningMode is not
+            set. Horizontal scrolling stays disabled so a diagonal finger cannot wobble the layout
+            sideways.
+        -->
+        <ScrollViewer x:Name="SettingsScroll"
+                      Grid.Row="0"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      controls:TouchPan.IsEnabled="True">
             <StackPanel>
 
                 <!-- Panel behavior (M2-RF-921) -->

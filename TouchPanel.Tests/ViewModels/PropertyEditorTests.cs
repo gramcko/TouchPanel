@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.ComponentModel;
 using System.Text.Json;
 using TouchPanel.Config;
+using TouchPanel.Config.Validation;
 using TouchPanel.Monitoring;
 using TouchPanel.Tests.Monitoring;
 using TouchPanel.Tests.TestSupport;
@@ -953,6 +954,94 @@ public sealed class PropertyEditorTests
         // Choosing an unrelated known key changes it; an unknown key was never cleared implicitly.
         editor.SelectedSensor = editor.SensorOptions.First(option => option.Key == SensorKeys.RamPercent);
         Assert.Equal(SensorKeys.RamPercent, ((GaugeWidgetConfig)context.Config.Pages[0].Widgets[0]).Sensor);
+    }
+
+    [Fact]
+    public void SensorPicker_RateSensorOnTheDefaultRange_AdoptsTheRateScaleImmediately()
+    {
+        // User-reported fix: switching to net.down must fix the fill right away, not only after the
+        // next load-time normalization, and the Min/Max fields must show the adopted scale.
+        var context = CreateContext(Bar("bar1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+
+        editor.SelectedSensor = editor.SensorOptions.First(option => option.Key == SensorKeys.NetworkDown);
+
+        var bar = Assert.IsType<BarWidgetConfig>(context.Config.Pages[0].Widgets[0]);
+        Assert.Equal(ConfigValidator.DefaultRateMinimum, bar.Minimum);
+        Assert.Equal(ConfigValidator.DefaultRateMaximum, bar.Maximum);
+        Assert.Equal("0", editor.MinimumText);
+        Assert.Equal("12500000", editor.MaximumText);
+
+        // The live widget re-projects the adopted range without a rebuild/reload.
+        Assert.Equal(ConfigValidator.DefaultRateMaximum, Assert.IsType<BarWidgetViewModel>(context.Widgets[0]).Maximum);
+    }
+
+    [Fact]
+    public void SensorPicker_RateSensorOnAGaugeWithTheDefaultRange_AdoptsTheRateScaleImmediately()
+    {
+        var context = CreateContext(Gauge("g1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+
+        editor.SelectedSensor = editor.SensorOptions.First(option => option.Key == SensorKeys.DiskWrite);
+
+        var gauge = Assert.IsType<GaugeWidgetConfig>(context.Config.Pages[0].Widgets[0]);
+        Assert.Equal(ConfigValidator.DefaultRateMinimum, gauge.Minimum);
+        Assert.Equal(ConfigValidator.DefaultRateMaximum, gauge.Maximum);
+        Assert.Equal("12500000", editor.MaximumText);
+        Assert.Equal(ConfigValidator.DefaultRateMaximum, Assert.IsType<GaugeWidgetViewModel>(context.Widgets[0]).Maximum);
+    }
+
+    [Fact]
+    public void SensorPicker_RateSensorWithAnExplicitRange_KeepsTheUsersScale()
+    {
+        var bar = Bar("bar1");
+        bar.Maximum = 1000;
+        var context = CreateContext(bar);
+        context.EnterSelect();
+        var editor = context.Editor;
+
+        editor.SelectedSensor = editor.SensorOptions.First(option => option.Key == SensorKeys.NetworkDown);
+
+        var edited = Assert.IsType<BarWidgetConfig>(context.Config.Pages[0].Widgets[0]);
+        Assert.Equal(0, edited.Minimum);
+        Assert.Equal(1000, edited.Maximum);
+        Assert.Equal("1000", editor.MaximumText);
+    }
+
+    [Fact]
+    public void SensorPicker_ExplicitRangeTypedAfterARateAdoption_SurvivesAnotherSensorChange()
+    {
+        var context = CreateContext(Bar("bar1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+
+        editor.SelectedSensor = editor.SensorOptions.First(option => option.Key == SensorKeys.NetworkDown);
+        editor.MaximumText = "5000";
+        editor.SelectedSensor = editor.SensorOptions.First(option => option.Key == SensorKeys.NetworkUp);
+
+        var bar = Assert.IsType<BarWidgetConfig>(context.Config.Pages[0].Widgets[0]);
+        Assert.Equal(5000, bar.Maximum);
+        Assert.Equal("5000", editor.MaximumText);
+    }
+
+    [Fact]
+    public void SensorPicker_SwitchingBackFromARateSensor_RestoresThePercentScale()
+    {
+        // The adoption is reversible only while the range was never edited, so a percent display is
+        // not left with a 100 Mbps scale the user never chose.
+        var context = CreateContext(Bar("bar1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+
+        editor.SelectedSensor = editor.SensorOptions.First(option => option.Key == SensorKeys.NetworkDown);
+        editor.SelectedSensor = editor.SensorOptions.First(option => option.Key == SensorKeys.CpuTotal);
+
+        var bar = Assert.IsType<BarWidgetConfig>(context.Config.Pages[0].Widgets[0]);
+        Assert.Equal(BarWidgetConfig.DefaultMinimum, bar.Minimum);
+        Assert.Equal(BarWidgetConfig.DefaultMaximum, bar.Maximum);
+        Assert.Equal("100", editor.MaximumText);
     }
 
     [Fact]

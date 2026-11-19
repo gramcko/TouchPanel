@@ -6,6 +6,7 @@ using TouchPanel.Tests.TestSupport;
 using TouchPanel.ViewModels;
 using TouchPanel.ViewModels.Paging;
 using TouchPanel.Views;
+using TouchPanel.Widgets;
 
 namespace TouchPanel.Tests.Views;
 
@@ -186,6 +187,63 @@ public sealed class PagePagerViewTests
         Assert.False(result.complete.Handled);
         Assert.Empty(service.Requests);
         Assert.Equal("first", vm.ActivePageId);
+    }
+
+    [Fact]
+    public async Task EditModeGate_FromTheEditModeService_DoesNotSwallowEditPanning()
+    {
+        // Mirrors MainWindow: paging is disabled while edit mode is active, and the window-level
+        // preview handlers bail out before marking anything handled, so a touch drag reaches the edit
+        // panels' vertical panning (the property/pages ScrollViewers) instead of being eaten by the
+        // swipe tracker. Normal-mode swiping still navigates.
+        using var sta = new StaThread();
+        var service = new FakePageSwitchService();
+        var config = Config("first");
+        var viewModel = new PageSwitcherViewModel(config, service);
+        var registry = WidgetRegistry.CreateDefault();
+        var page = PageViewModel.CreateForActivePage(config, registry);
+        var editMode = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var view = new PageSwitcherView
+            {
+                DataContext = viewModel,
+                IsPagingEnabled = () => !editMode.IsEditMode,
+            };
+
+            var normalBegin = view.BeginGestureForTest(400, 200);
+            var normalMove = view.MoveGestureForTest(200, 200);
+            var normalComplete = view.CompleteGestureForTest(180, 200);
+            var normalRequests = service.Requests.Count;
+
+            editMode.Enter(1024, 600);
+
+            var editBegin = view.BeginGestureForTest(400, 200);
+            var editMove = view.MoveGestureForTest(200, 200);
+            var editComplete = view.CompleteGestureForTest(180, 200);
+
+            return (
+                IsEditMode: editMode.IsEditMode,
+                NormalBegin: normalBegin,
+                NormalMoveHandled: normalMove.Handled,
+                NormalCompleteHandled: normalComplete.Handled,
+                NormalRequests: normalRequests,
+                EditBegin: editBegin,
+                EditMoveHandled: editMove.Handled,
+                EditCompleteHandled: editComplete.Handled,
+                EditRequests: service.Requests.Count);
+        });
+
+        Assert.True(result.IsEditMode);
+        Assert.True(result.NormalBegin, "Normal-mode swiping must stay tracked.");
+        Assert.True(result.NormalMoveHandled, "Normal-mode swipes must still suppress the widget tap.");
+        Assert.Equal(1, result.NormalRequests);
+
+        Assert.False(result.EditBegin, "Edit mode must not start a page gesture.");
+        Assert.False(result.EditMoveHandled, "Edit mode must leave the drag unhandled so touch panning works.");
+        Assert.False(result.EditCompleteHandled, "Edit mode must leave the release unhandled so touch panning works.");
+        Assert.Equal(1, result.EditRequests);
     }
 
     private static PageSwitcherViewModel CreateViewModel(

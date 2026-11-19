@@ -330,6 +330,195 @@ public sealed class ConfigValidatorCustomizationTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.displayUnit");
     }
 
+    // ---- Rate default scale (user-reported fix: a rate bar/gauge was always full) ----
+
+    [Fact]
+    public void Bar_RateSensor_WithTheUntouchedDefaultRange_AdoptsTheRateScaleSilently()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = SensorKeys.NetworkDown,
+            Minimum = BarWidgetConfig.DefaultMinimum,
+            Maximum = BarWidgetConfig.DefaultMaximum,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.Equal(ConfigValidator.DefaultRateMinimum, bar.Minimum);
+        Assert.Equal(ConfigValidator.DefaultRateMaximum, bar.Maximum);
+        Assert.True(bar.IsEnabled);
+
+        // Silent normalization: nothing for the user to act on, so no diagnostic at all.
+        Assert.DoesNotContain(
+            diagnostics,
+            diagnostic => diagnostic.Severity is ConfigDiagnosticSeverity.Warning or ConfigDiagnosticSeverity.Error);
+    }
+
+    [Fact]
+    public void Gauge_RateSensor_WithTheUntouchedDefaultRange_AdoptsTheRateScaleSilently()
+    {
+        var gauge = new GaugeWidgetConfig
+        {
+            Id = "g",
+            Width = 200,
+            Height = 200,
+            Sensor = SensorKeys.DiskRead,
+            Minimum = GaugeWidgetConfig.DefaultMinimum,
+            Maximum = GaugeWidgetConfig.DefaultMaximum,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(gauge));
+
+        Assert.Equal(ConfigValidator.DefaultRateMinimum, gauge.Minimum);
+        Assert.Equal(ConfigValidator.DefaultRateMaximum, gauge.Maximum);
+        Assert.True(gauge.IsEnabled);
+        Assert.DoesNotContain(
+            diagnostics,
+            diagnostic => diagnostic.Severity is ConfigDiagnosticSeverity.Warning or ConfigDiagnosticSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData(SensorKeys.CpuTotal)]
+    [InlineData(SensorKeys.RamUsed)]
+    [InlineData(SensorKeys.CpuTemperature)]
+    public void Bar_NonRateSensor_WithTheDefaultRange_KeepsThePercentScale(string sensor)
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = sensor,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.Equal(BarWidgetConfig.DefaultMinimum, bar.Minimum);
+        Assert.Equal(BarWidgetConfig.DefaultMaximum, bar.Maximum);
+        Assert.DoesNotContain(
+            diagnostics,
+            diagnostic => diagnostic.Severity is ConfigDiagnosticSeverity.Warning or ConfigDiagnosticSeverity.Error);
+    }
+
+    [Theory]
+    [InlineData(SensorKeys.CpuTotal)]
+    [InlineData(SensorKeys.CpuTemperature)]
+    public void Gauge_NonRateSensor_WithTheDefaultRange_KeepsThePercentScale(string sensor)
+    {
+        var gauge = new GaugeWidgetConfig
+        {
+            Id = "g",
+            Width = 200,
+            Height = 200,
+            Sensor = sensor,
+        };
+
+        ConfigValidator.Validate(CreateConfig(gauge));
+
+        Assert.Equal(GaugeWidgetConfig.DefaultMinimum, gauge.Minimum);
+        Assert.Equal(GaugeWidgetConfig.DefaultMaximum, gauge.Maximum);
+    }
+
+    [Fact]
+    public void Bar_RateSensor_WithAnExplicitRange_IsNeverRescaled()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = SensorKeys.NetworkDown,
+            Minimum = 0,
+            Maximum = 1000,
+        };
+
+        ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.Equal(0, bar.Minimum);
+        Assert.Equal(1000, bar.Maximum);
+    }
+
+    [Fact]
+    public void Gauge_RateSensor_WithAnExplicitRange_IsNeverRescaled()
+    {
+        var gauge = new GaugeWidgetConfig
+        {
+            Id = "g",
+            Width = 200,
+            Height = 200,
+            Sensor = SensorKeys.NetworkUp,
+            Minimum = 0,
+            Maximum = 50,
+        };
+
+        ConfigValidator.Validate(CreateConfig(gauge));
+
+        Assert.Equal(0, gauge.Minimum);
+        Assert.Equal(50, gauge.Maximum);
+    }
+
+    [Fact]
+    public void Bar_UnknownSensor_WithTheDefaultRange_IsNotRescaled()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = "custom.sensor",
+        };
+
+        ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.False(bar.IsEnabled);
+        Assert.Equal(BarWidgetConfig.DefaultMinimum, bar.Minimum);
+        Assert.Equal(BarWidgetConfig.DefaultMaximum, bar.Maximum);
+    }
+
+    [Fact]
+    public void Bar_MissingSensor_WithTheDefaultRange_IsNotRescaled()
+    {
+        var bar = new BarWidgetConfig { Id = "bar", Width = 240, Height = 64, Sensor = null };
+
+        ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.False(bar.IsEnabled);
+        Assert.Equal(BarWidgetConfig.DefaultMinimum, bar.Minimum);
+        Assert.Equal(BarWidgetConfig.DefaultMaximum, bar.Maximum);
+    }
+
+    [Fact]
+    public void Gauge_UnknownSensor_WithTheDefaultRange_IsNotRescaled()
+    {
+        var gauge = new GaugeWidgetConfig
+        {
+            Id = "g",
+            Width = 200,
+            Height = 200,
+            Sensor = "custom.sensor",
+        };
+
+        ConfigValidator.Validate(CreateConfig(gauge));
+
+        Assert.Equal(GaugeWidgetConfig.DefaultMinimum, gauge.Minimum);
+        Assert.Equal(GaugeWidgetConfig.DefaultMaximum, gauge.Maximum);
+    }
+
+    [Fact]
+    public void DefaultRangeConstants_MatchTheBarAndGaugeDefaults()
+    {
+        // The rate-scale rule keys off this exact pair, so the three declarations cannot drift.
+        Assert.Equal(BarWidgetConfig.DefaultMinimum, ConfigValidator.DefaultRangeMinimum);
+        Assert.Equal(BarWidgetConfig.DefaultMaximum, ConfigValidator.DefaultRangeMaximum);
+        Assert.Equal(GaugeWidgetConfig.DefaultMinimum, ConfigValidator.DefaultRangeMinimum);
+        Assert.Equal(GaugeWidgetConfig.DefaultMaximum, ConfigValidator.DefaultRangeMaximum);
+        Assert.Equal(0, ConfigValidator.DefaultRateMinimum);
+        Assert.Equal(12_500_000d, ConfigValidator.DefaultRateMaximum);
+    }
+
     private static PanelConfig CreateConfig(params WidgetConfig[] widgets) =>
         new()
         {

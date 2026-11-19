@@ -1,6 +1,7 @@
 <Window x:Class="TouchPanel.Views.Hotkeys.HotkeysEditorWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:TouchPanel.Views.Controls"
         Title="TouchPanel Hotkeys"
         Width="640"
         Height="760"
@@ -89,7 +90,10 @@
                       MinHeight="160"
                       ItemsSource="{Binding Entries}"
                       SelectedItem="{Binding SelectedEntry, Mode=TwoWay}"
-                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                      ScrollViewer.PanningMode="None"
+                      controls:TouchPan.IsEnabled="True">
                 <ListView.ItemTemplate>
                     <DataTemplate>
                         <StackPanel Margin="0,4">
@@ -104,8 +108,14 @@
             </ListView>
         </Grid>
 
-        <!-- Draft editor (M3-RF-612) -->
-        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="360">
+        <!-- Draft editor (M3-RF-612); a vertical touch drag starting anywhere over the fields,
+             including on a check box label or a combo box, scrolls this section. -->
+        <ScrollViewer x:Name="HotkeyDraftScroll"
+                      Grid.Row="2"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      controls:TouchPan.IsEnabled="True"
+                      MaxHeight="360">
             <StackPanel>
                 <TextBlock Text="Combination" Style="{StaticResource SectionHeaderStyle}" />
 

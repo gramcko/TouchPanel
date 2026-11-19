@@ -1,4 +1,5 @@
 using TouchPanel.Config;
+using TouchPanel.Config.Validation;
 using TouchPanel.Monitoring;
 using TouchPanel.Tests.Monitoring;
 using TouchPanel.Tests.TestSupport;
@@ -235,6 +236,51 @@ public sealed class GaugeWidgetTests
         source.Publish(Network(1048576));
         Assert.Equal(1048576, gauge.Value);
         Assert.Equal("1 MB/s", gauge.ValueText);
+    }
+
+    [Fact]
+    public void RateSensor_WithTheRateDefaultScale_DoesNotPinTheGaugeAtFull()
+    {
+        // Same defect class as the bar: a gauge bound to net.down over the untouched 0–100 default
+        // read as 100% for any real traffic. The 0–12,500,000 B/s scale keeps the fill proportional.
+        var source = new FakeSnapshotSource();
+        var gauge = new GaugeWidgetViewModel(
+            CreateConfig(sensor: SensorKeys.NetworkDown, minimum: 0, maximum: ConfigValidator.DefaultRateMaximum),
+            source);
+
+        source.Publish(Network(1024));
+        Assert.Equal(1024d / 12_500_000d * 100d, gauge.Progress, precision: 9);
+
+        source.Publish(Network(500 * 1024));
+        Assert.Equal(4.096, gauge.Progress, precision: 6);
+
+        source.Publish(Network(12_500_000));
+        Assert.Equal(100, gauge.Progress);
+
+        source.Publish(Network(20_000_000));
+        Assert.Equal(100, gauge.Progress);
+    }
+
+    [Fact]
+    public void RateSensor_ThroughTheValidator_ProducesAProportionalGauge()
+    {
+        var gaugeConfig = CreateConfig(sensor: SensorKeys.NetworkDown);
+        var panel = new PanelConfig
+        {
+            SchemaVersion = PanelConfig.CurrentSchemaVersion,
+            ActivePageId = "main",
+            Pages = [new PageConfig { Id = "main", Widgets = [gaugeConfig] }],
+        };
+
+        ConfigValidator.Validate(panel);
+
+        var source = new FakeSnapshotSource();
+        var gauge = new GaugeWidgetViewModel(gaugeConfig, source);
+
+        Assert.Equal(ConfigValidator.DefaultRateMaximum, gauge.Maximum);
+
+        source.Publish(Network(12_500_000));
+        Assert.Equal(100, gauge.Progress);
     }
 
     [Theory]

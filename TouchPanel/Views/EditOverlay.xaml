@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:settingsViews="clr-namespace:TouchPanel.Views.Settings"
+             xmlns:controls="clr-namespace:TouchPanel.Views.Controls"
              Focusable="False"
              IsTabStop="False"
              Stylus.IsPressAndHoldEnabled="False"
@@ -584,7 +585,20 @@
             <ContentControl Content="{Binding PropertyEditor}" Focusable="False">
                 <ContentControl.ContentTemplate>
                     <DataTemplate>
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Focusable="False">
+                        <!--
+                            Touch panning (user-reported fix): the property editor is taller than a
+                            560 DIP panel, so a vertical drag starting anywhere over the fields
+                            (including on a TextBox, its text, a ComboBox, or a CheckBox) scrolls it.
+                            The custom touch-only behavior is the single pan mechanism here, so the
+                            built-in PanningMode is not set. Horizontal scrolling is disabled (the
+                            panel is a single 300 DIP column) so a diagonal finger cannot wobble the
+                            fields sideways; a horizontal-dominant drag is left to the field.
+                        -->
+                        <ScrollViewer x:Name="PropertyPanelScroll"
+                                      VerticalScrollBarVisibility="Auto"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      controls:TouchPan.IsEnabled="True"
+                                      Focusable="False">
                             <StackPanel Focusable="False">
                                 <TextBlock Text="{Binding TypeDisplayName}"
                                            FontSize="18"
@@ -1072,8 +1086,18 @@
                         HorizontalAlignment="Right"
                         Margin="0,0,0,6"
                         Click="OnClosePagesClick" />
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                <!--
+                    Touch panning (user-reported fix): the pages editor is taller than the panel, so
+                    a vertical drag anywhere over it scrolls it, including fields and buttons. The
+                    page rows themselves are excluded (TouchPan.IsPanExcluded on PageItems) so the
+                    row's drag-to-reorder gesture keeps priority; Move up / Move down remain the
+                    guaranteed touch fallback. The custom touch behavior is the single pan mechanism,
+                    so the built-in PanningMode is not set.
+                -->
+                <ScrollViewer x:Name="PagesPanelScroll"
+                              VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled"
+                              controls:TouchPan.IsEnabled="True"
                               Focusable="False">
                     <settingsViews:PagesEditorView x:Name="PagesEditor" />
                 </ScrollViewer>

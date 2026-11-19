@@ -6,6 +6,7 @@ using TouchPanel.Config;
 using TouchPanel.Tests.TestSupport;
 using TouchPanel.Theme;
 using TouchPanel.ViewModels.Settings;
+using TouchPanel.Views.Controls;
 using TouchPanel.Views.MonitorPicker;
 using TouchPanel.Views.Settings;
 
@@ -78,6 +79,40 @@ public sealed class SettingsWindowTests
 
         Assert.Equal("MonitorPicker", result.PickerName);
         Assert.True(result.HasMonitorItems);
+    }
+
+    [Fact]
+    public async Task SettingsWindow_ScrollsWithTouchPanningAnywhereOverTheContent()
+    {
+        // User-reported fix: a vertical drag that starts anywhere over the settings content (even on
+        // a field, its text, or a check box) must scroll the window. The custom touch behavior is the
+        // single mechanism, so the built-in PanningMode is no longer set. Horizontal panning stays off
+        // so diagonal fingers do not wobble the layout.
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var window = CreateWindow(out _);
+            try
+            {
+                window.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                var scroll = Assert.IsType<ScrollViewer>(window.FindName("SettingsScroll"));
+                return (
+                    TouchPan: TouchPan.GetIsEnabled(scroll),
+                    scroll.PanningMode,
+                    scroll.HorizontalScrollBarVisibility,
+                    scroll.VerticalScrollBarVisibility);
+            }
+            finally
+            {
+                window.Close();
+            }
+        });
+
+        Assert.True(result.TouchPan);
+        Assert.Equal(PanningMode.None, result.PanningMode);
+        Assert.Equal(ScrollBarVisibility.Disabled, result.HorizontalScrollBarVisibility);
+        Assert.Equal(ScrollBarVisibility.Auto, result.VerticalScrollBarVisibility);
     }
 
     [Fact]

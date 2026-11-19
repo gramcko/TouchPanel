@@ -17,6 +17,17 @@ namespace TouchPanel.Views.Settings;
 /// releasing over a different slot persists the new order through the single writer. WPF promotes
 /// touch input to mouse, so the same wiring serves mouse and touch. A drag beyond the threshold
 /// handles the release event, so the row's own button never treats the gesture as a tap.
+/// <para>
+/// <b>Interplay with touch panning.</b> Both hosts wrap this view in a <c>ScrollViewer</c> with the
+/// custom <c>TouchPan</c> drag-to-scroll behavior (user-reported fix: the panels only scrolled by
+/// dragging the scrollbar thumb). The page list is marked <c>TouchPan.IsPanExcluded</c>, so a touch
+/// that starts on a row is left entirely to the row's pointer handlers and reorder keeps priority
+/// over the pane; a pan starts from the panel chrome/gaps and from any non-row content, including
+/// over the fields. The always visible <c>Move up</c>/<c>Move down</c> buttons are the guaranteed
+/// touch path for reordering and are not affected by panning. This coexistence is structural
+/// (pointer capture + preview handlers), verified by the BAML/mouse-driven reorder tests; real touch
+/// must be confirmed by hand.
+/// </para>
 /// </remarks>
 public partial class PagesEditorView : UserControl
 {

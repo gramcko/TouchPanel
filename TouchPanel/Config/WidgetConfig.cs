@@ -205,6 +205,12 @@ public enum DisplayUnit
 /// <summary>A Gauge widget (RF-033, RF-034): renders a telemetry sensor over a display range.</summary>
 public sealed class GaugeWidgetConfig : WidgetConfig
 {
+    /// <summary>Default lower bound of the display range (mirrors <see cref="BarWidgetConfig.DefaultMinimum"/>).</summary>
+    public const double DefaultMinimum = 0;
+
+    /// <summary>Default upper bound of the display range (mirrors <see cref="BarWidgetConfig.DefaultMaximum"/>).</summary>
+    public const double DefaultMaximum = 100;
+
     /// <inheritdoc/>
     public override string Type => WidgetTypes.Gauge;
 
@@ -214,11 +220,11 @@ public sealed class GaugeWidgetConfig : WidgetConfig
     /// </summary>
     public string? Sensor { get; set; }
 
-    /// <summary>Gets or sets the lower bound of the display range. Defaults to <c>0</c>.</summary>
-    public double Minimum { get; set; }
+    /// <summary>Gets or sets the lower bound of the display range. Defaults to <see cref="DefaultMinimum"/>.</summary>
+    public double Minimum { get; set; } = DefaultMinimum;
 
-    /// <summary>Gets or sets the upper bound of the display range. Defaults to <c>100</c>.</summary>
-    public double Maximum { get; set; } = 100;
+    /// <summary>Gets or sets the upper bound of the display range. Defaults to <see cref="DefaultMaximum"/>.</summary>
+    public double Maximum { get; set; } = DefaultMaximum;
 
     /// <summary>
     /// Gets or sets the display unit used when the bound sensor reports bytes or bytes per second

@@ -69,6 +69,7 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
     private string _imagePathText = string.Empty;
     private bool _showLabel;
     private bool _showValue;
+    private bool _rateScaleAdopted;
     private string? _validationError;
 
     /// <summary>The icon-picker entry that represents "no icon" (the widget shows none).</summary>
@@ -566,6 +567,10 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
                     return;
             }
 
+            // User-reported fix: switching a Bar/Gauge to a bytes-per-second sensor (net/disk) while
+            // its range is still the untouched 0–100 default adopts the unit-aware 0–100 Mbps scale,
+            // so the fill is correct immediately instead of only after the next load normalization.
+            ApplyRateScaleForSensorChange();
             CommitConfig();
         }
     }
@@ -1248,6 +1253,8 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
                 return false;
         }
 
+        // An explicit range edit is the user's scale; the auto-adopted rate scale must never undo it.
+        _rateScaleAdopted = false;
         CommitConfig();
         return true;
     }
@@ -1300,8 +1307,72 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
                 return false;
         }
 
+        // An explicit range edit is the user's scale; the auto-adopted rate scale must never undo it.
+        _rateScaleAdopted = false;
         CommitConfig();
         return true;
+    }
+
+    /// <summary>
+    /// Applies the unit-aware rate scale after a sensor change (user-reported fix): a Bar/Gauge bound
+    /// to a bytes-per-second sensor (<c>net.up</c>/<c>net.down</c>/<c>disk.read</c>/<c>disk.write</c>)
+    /// whose range is still the untouched 0–100 default adopts 0–12,500,000 B/s (100 Mbps) — the same
+    /// silent normalization <see cref="ConfigValidator"/> applies at load time — and the Min/Max
+    /// fields are refreshed so the editor and the persisted file agree immediately. An explicit range
+    /// is never rewritten. The mirror case (switching away from the rate sensor after the scale was
+    /// auto-adopted and never edited) restores the 0–100 default so a percent/°C/RPM bar is not left
+    /// with a 100 Mbps scale; a range the user typed always wins.
+    /// </summary>
+    private void ApplyRateScaleForSensorChange()
+    {
+        if (_config is not (GaugeWidgetConfig or BarWidgetConfig))
+        {
+            return;
+        }
+
+        var minimum = ReadMinimum();
+        var maximum = ReadMaximum();
+        var sensor = ReadSensor();
+
+        if (ConfigValidator.ShouldUseRateDefaultRange(sensor, minimum, maximum))
+        {
+            SetRange(ConfigValidator.DefaultRateMinimum, ConfigValidator.DefaultRateMaximum);
+            _rateScaleAdopted = true;
+        }
+        else if (_rateScaleAdopted
+            && !ConfigValidator.IsRateSensor(sensor)
+            && minimum.Equals(ConfigValidator.DefaultRateMinimum)
+            && maximum.Equals(ConfigValidator.DefaultRateMaximum))
+        {
+            SetRange(ConfigValidator.DefaultRangeMinimum, ConfigValidator.DefaultRangeMaximum);
+            _rateScaleAdopted = false;
+        }
+        else
+        {
+            _rateScaleAdopted = false;
+        }
+
+        if (HasRange)
+        {
+            SetField(ref _minimumText, FormatNumber(ReadMinimum()), nameof(MinimumText));
+            SetField(ref _maximumText, FormatNumber(ReadMaximum()), nameof(MaximumText));
+        }
+    }
+
+    /// <summary>Writes a bar/gauge display range; a no-op for every other widget type.</summary>
+    private void SetRange(double minimum, double maximum)
+    {
+        switch (_config)
+        {
+            case GaugeWidgetConfig gauge:
+                gauge.Minimum = minimum;
+                gauge.Maximum = maximum;
+                break;
+            case BarWidgetConfig bar:
+                bar.Minimum = minimum;
+                bar.Maximum = maximum;
+                break;
+        }
     }
 
     private void CommitConfig()

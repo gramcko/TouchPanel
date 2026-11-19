@@ -5,6 +5,7 @@ using TouchPanel.Config;
 using TouchPanel.Services.Config;
 using TouchPanel.Tests.TestSupport;
 using TouchPanel.ViewModels.Settings;
+using TouchPanel.Views.Controls;
 using TouchPanel.Views.Settings;
 
 namespace TouchPanel.Tests.Views;
@@ -68,6 +69,25 @@ public sealed class PagesEditorViewTests
         Assert.Equal(Visibility.Collapsed, result.ConfirmationVisibility);
         Assert.Equal(Visibility.Collapsed, result.DropIndicatorVisibility);
         Assert.True(result.DragEnabled);
+    }
+
+    [Fact]
+    public async Task PagesEditor_ExcludesTheRowListFromPanningSoReorderKeepsPriority()
+    {
+        // A touch that starts on a page row must keep feeding the row's drag-to-reorder gesture; the
+        // pages surfaces pan from the chrome, the fields, and every other area instead.
+        using var sta = new StaThread();
+
+        var excluded = await sta.InvokeAsync(() =>
+        {
+            var context = CreateContext();
+            var view = new PagesEditorView { DataContext = context.ViewModel };
+            view.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            var items = Assert.IsType<ItemsControl>(view.FindName("PageItems"));
+            return TouchPan.GetIsPanExcluded(items);
+        });
+
+        Assert.True(excluded);
     }
 
     [Fact]
