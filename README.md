@@ -19,6 +19,11 @@ Latest release: [github.com/gramcko/TouchPanel/releases](https://github.com/gram
 - **Live telemetry** at ~1 Hz (CPU/GPU/RAM/disk/network, temperatures and fan speeds via LibreHardwareMonitor — optional), with a configurable polling interval.
 - **Themes** (dark / light / high-contrast / midnight / nord / OLED) plus accent colour and icon packs, with per-widget appearance overrides and app-wide themed scrollbars.
 - **Edit mode**: add/remove/duplicate widgets, move/resize, property and action editors with executable browse, grid snap with alignment guides, and undo/redo for widget edits.
+- **Edit-mode keyboard focus**: the panel takes keyboard focus only while editing, so labels, values, and paths can be typed in; leaving edit mode returns focus to the window you came from, and normal mode still never activates or steals focus.
+- **Brand app buttons**: Steam, Discord, WhatsApp, Spotify, Chrome, Edge, Brave, Firefox, VS Code, and GitHub Desktop icons, plus an **Apps** row in the edit toolbar that adds a ready-made launch button (detected install path, otherwise the app's URI via the shell).
+- **Inline icon picker and label icons**: the Icon and Label icon fields open a scrollable icon grid inside the property panel, and a widget's text label can be replaced by an icon (the text stays available as a tooltip).
+- **Auto (KB/MB) units**: byte-rate sensors switch from KB/s to MB/s at 1024 KB/s and back.
+- **Application icon** for the executable, the tray, and all windows.
 - **System tray** lifecycle with Show/Hide Panel, Edit Mode, Settings…, Hotkeys…, About TouchPanel…, Open Configuration Folder, and Exit.
 - **Start with Windows** (per-user, no elevation) and **single instance** (`--exit`/second launch signals the running instance).
 - **JSON configuration** with schema versioning, ordered migrations, atomic save, and backup/recovery.
@@ -162,7 +167,7 @@ Each widget binds to exactly one action:
 
 ### About and updates
 
-Tray **About TouchPanel…** opens a themed window with the app name, the running version (`1.0.2` today), a one-line description, links to the GitHub repository and releases, and a **Check for updates** button.
+Tray **About TouchPanel…** opens a themed window with the app name, the running version (`1.0.3` today), a one-line description, links to the GitHub repository and releases, and a **Check for updates** button.
 
 - The check is **manual only** — never on startup and no background polling. It queries the latest GitHub release over HTTPS with a 10 s timeout and a bounded response, then compares the tag with the running version.
 - It reports **Update available: vX** (with an **Open release** link) or **You're up to date**, and shows a neutral **Couldn't check for updates** when offline, when there are no releases, or on error. It never downloads or installs anything.
@@ -174,7 +179,7 @@ Create global hotkeys in the **Hotkeys…** window. Each hotkey requires at leas
 
 ### Widgets and sensors
 
-Gauges, Bars, and Sparklines pick a **sensor from a list**. Byte/rate sensors offer a display unit selector (Auto / B / KB / MB / GB). Sparklines can show or hide the current value. The Image widget displays a **PNG** loaded from a path chosen with **Browse**.
+Gauges, Bars, and Sparklines pick a **sensor from a list**. Byte/rate sensors offer a display unit selector (Auto / Auto (KB/MB) / B / KB / MB / GB). Sparklines can show or hide the current value. The Image widget displays a **PNG** loaded from a path chosen with **Browse**.
 
 ### Appearance
 
