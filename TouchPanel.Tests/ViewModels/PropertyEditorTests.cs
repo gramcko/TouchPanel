@@ -763,7 +763,11 @@ public sealed class PropertyEditorTests
         var editor = context.Editor;
 
         Assert.Equal(DisplayUnit.Auto, editor.SelectedDisplayUnit.Unit);
-        Assert.Equal(5, editor.DisplayUnitOptions.Count);
+        Assert.Equal(6, editor.DisplayUnitOptions.Count);
+        Assert.Equal(
+            new[] { DisplayUnit.Auto, DisplayUnit.AutoKilobytes, DisplayUnit.Bytes, DisplayUnit.Kilobytes, DisplayUnit.Megabytes, DisplayUnit.Gigabytes },
+            editor.DisplayUnitOptions.Select(option => option.Unit).ToArray());
+        Assert.Equal("Auto (KB/MB)", editor.DisplayUnitOptions[1].DisplayName);
 
         editor.SelectedDisplayUnit = editor.DisplayUnitOptions.First(option => option.Unit == DisplayUnit.Megabytes);
 
@@ -787,6 +791,87 @@ public sealed class PropertyEditorTests
 
         Assert.Equal(DisplayUnit.Kilobytes, ((BarWidgetConfig)context.Config.Pages[0].Widgets[0]).DisplayUnit);
         Assert.True(context.Service.IsDirty);
+
+        // User-requested addition: the automatic binary KB/MB option persists through the same path.
+        editor.SelectedDisplayUnit = editor.DisplayUnitOptions.First(option => option.Unit == DisplayUnit.AutoKilobytes);
+
+        Assert.Equal(DisplayUnit.AutoKilobytes, ((BarWidgetConfig)context.Config.Pages[0].Widgets[0]).DisplayUnit);
+        Assert.Equal(DisplayUnit.AutoKilobytes, editor.SelectedDisplayUnit.Unit);
+    }
+
+    [Fact]
+    public void LabelIcon_OfferedForWidgetsThatRenderALabelElement()
+    {
+        foreach (var (config, expected) in new (WidgetConfig Config, bool Expected)[]
+        {
+            (Bar("bar1"), true),
+            (GaugeWithSensor("g1", SensorKeys.CpuTotal), true),
+            (Sparkline("sp1"), true),
+            (Slider("s1"), true),
+            (Label("l1"), false),
+            (Button("b1"), false),
+        })
+        {
+            Assert.Equal(expected, EditorFor(config).SupportsLabelIcon);
+        }
+    }
+
+    [Fact]
+    public void LabelIcon_OptionsContainNoneAndTheCatalog()
+    {
+        var editor = EditorFor(Bar("bar1"));
+
+        Assert.NotEmpty(editor.LabelIconOptions);
+        Assert.Equal(string.Empty, editor.LabelIconOptions[0].Id);
+        Assert.All(
+            editor.LabelIconOptions,
+            option => Assert.True(option.Id.Length == 0 || IconCatalog.TryGet(option.Id, out _)));
+        Assert.Contains(editor.LabelIconOptions, option => option.Id == "download" && option.DisplayName == "Download");
+    }
+
+    [Fact]
+    public void LabelIcon_SelectionAppliesLiveAndNoneClearsIt()
+    {
+        var context = CreateContext(Bar("bar1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+        var barViewModel = Assert.IsType<BarWidgetViewModel>(context.Widgets[0]);
+
+        Assert.Same(IconCatalog.BuiltIn.First(), editor.LabelIconOptions[1]);
+        Assert.Equal(string.Empty, editor.SelectedLabelIcon.Id);
+        Assert.False(barViewModel.HasLabelIcon);
+
+        editor.SelectedLabelIcon = editor.LabelIconOptions.First(option => option.Id == "download");
+
+        Assert.Equal("download", ((BarWidgetConfig)context.Config.Pages[0].Widgets[0]).LabelIcon);
+        Assert.Equal("download", editor.SelectedLabelIcon.Id);
+        Assert.True(context.Service.IsDirty);
+        Assert.True(barViewModel.HasLabelIcon);
+        Assert.Equal(IconCatalog.GlyphFor("download"), barViewModel.LabelIconGlyph);
+        Assert.Equal("bar1", barViewModel.Label);
+
+        // "None" clears the field and restores the text label; the text itself was never lost.
+        editor.SelectedLabelIcon = editor.LabelIconOptions[0];
+
+        Assert.Null(((BarWidgetConfig)context.Config.Pages[0].Widgets[0]).LabelIcon);
+        Assert.Equal(string.Empty, editor.SelectedLabelIcon.Id);
+        Assert.False(barViewModel.HasLabelIcon);
+        Assert.Equal("bar1", barViewModel.Label);
+    }
+
+    [Fact]
+    public void LabelIcon_RejectsANonCatalogIdWithoutMutation()
+    {
+        var context = CreateContext(Bar("bar1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+
+        editor.SelectedLabelIcon = new IconOption(@"C:\evil.png", "\uE700", "evil");
+
+        Assert.True(editor.HasValidationError);
+        Assert.Null(((BarWidgetConfig)context.Config.Pages[0].Widgets[0]).LabelIcon);
+        Assert.Equal(string.Empty, editor.SelectedLabelIcon.Id);
+        Assert.False(context.Service.IsDirty);
     }
 
     [Fact]
@@ -1123,6 +1208,17 @@ public sealed class PropertyEditorTests
         Width = 200,
         Height = 100,
         Label = id,
+    };
+
+    private static ButtonWidgetConfig Button(string id) => new()
+    {
+        Id = id,
+        X = 0,
+        Y = 0,
+        Width = 200,
+        Height = 100,
+        Label = id,
+        Action = new MuteActionConfig(),
     };
 
     private static SliderWidgetConfig Slider(string id) => new()

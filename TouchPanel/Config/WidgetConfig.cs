@@ -81,6 +81,15 @@ public abstract class WidgetConfig
     public string? Icon { get; set; }
 
     /// <summary>
+    /// Gets or sets the id of the built-in icon rendered <em>instead of</em> the widget's label text,
+    /// or <see langword="null"/> to keep rendering the text label (user-requested addition). The
+    /// value must be one of <see cref="IconCatalog.BuiltIn"/>; validation clears an unknown id with
+    /// a warning. Additive and optional: its absence leaves older files unchanged (no schema bump).
+    /// The label text in <see cref="Label"/> is retained either way, so clearing the icon restores it.
+    /// </summary>
+    public string? LabelIcon { get; set; }
+
+    /// <summary>
     /// Gets or sets the foreground color override as <c>#RRGGBB</c> or <c>#AARRGGBB</c>, or
     /// <see langword="null"/> to use the theme default (RF-043/M2-RF-436). Validation clears an
     /// invalid value with a warning.
@@ -200,6 +209,15 @@ public enum DisplayUnit
 
     /// <summary>Format the value in gibibytes (<c>GB</c>).</summary>
     Gigabytes,
+
+    /// <summary>
+    /// Automatic binary KB/MB switching for byte and byte-per-second sensors (user-requested
+    /// addition): values below 1,048,576 bytes (1024 KB) render in kibibytes (<c>KB</c>), values at
+    /// or above that threshold render in mebibytes (<c>MB</c>), and the choice follows the value as
+    /// it rises and falls. Rates keep the <c>/s</c> suffix. Appended after the existing members so
+    /// their numeric order stays stable; persisted as <c>autoKilobytes</c>.
+    /// </summary>
+    AutoKilobytes,
 }
 
 /// <summary>A Gauge widget (RF-033, RF-034): renders a telemetry sensor over a display range.</summary>

@@ -365,6 +365,53 @@ public sealed class GaugeWidgetTests
         Assert.Equal("1536 KB/s", gauge.ValueText);
     }
 
+    // ---- User-requested addition: automatic binary KB/MB display unit ----
+
+    [Theory]
+    [InlineData(0, "0 KB")]
+    [InlineData(1024, "1 KB")]
+    [InlineData(524288, "512 KB")]
+    [InlineData(1047552, "1023 KB")]
+    [InlineData(1048576, "1 MB")]
+    [InlineData(1572864, "1.5 MB")]
+    [InlineData(943718400, "900 MB")]
+    public void FormatValue_AutoKilobytes_UsesKBBelowTheThresholdAndMBAtOrAboveIt(double bytes, string expected)
+    {
+        Assert.Equal(expected, GaugeWidgetViewModel.FormatValue(bytes, SensorUnit.Bytes, DisplayUnit.AutoKilobytes));
+    }
+
+    [Theory]
+    [InlineData(0, "0 KB/s")]
+    [InlineData(1024, "1 KB/s")]
+    [InlineData(524288, "512 KB/s")]
+    [InlineData(1047552, "1023 KB/s")]
+    [InlineData(1048576, "1 MB/s")]
+    [InlineData(1572864, "1.5 MB/s")]
+    [InlineData(943718400, "900 MB/s")]
+    public void FormatValue_AutoKilobytesRate_KeepsThePerSecondSuffix(double bytes, string expected)
+    {
+        Assert.Equal(expected, GaugeWidgetViewModel.FormatValue(bytes, SensorUnit.BytesPerSecond, DisplayUnit.AutoKilobytes));
+    }
+
+    [Fact]
+    public void RateSensor_AutoKilobytes_SwitchesUpAndDownLive()
+    {
+        var source = new FakeSnapshotSource();
+        var gauge = new GaugeWidgetViewModel(
+            CreateConfig(sensor: SensorKeys.NetworkDown, displayUnit: DisplayUnit.AutoKilobytes),
+            source);
+
+        source.Publish(Network(524288));
+        Assert.Equal("512 KB/s", gauge.ValueText);
+
+        source.Publish(Network(1572864));
+        Assert.Equal("1.5 MB/s", gauge.ValueText);
+
+        // Dropping below 1024 KB switches straight back to KB.
+        source.Publish(Network(1024));
+        Assert.Equal("1 KB/s", gauge.ValueText);
+    }
+
     private static SensorSnapshot Ram(double? value) => new()
     {
         CapturedAt = DateTimeOffset.UnixEpoch,

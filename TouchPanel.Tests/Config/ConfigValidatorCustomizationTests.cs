@@ -330,6 +330,85 @@ public sealed class ConfigValidatorCustomizationTests
         Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.displayUnit");
     }
 
+    [Fact]
+    public void Bar_AutoKilobytesDisplayUnit_IsPreservedWithoutAWarning()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = SensorKeys.NetworkDown,
+            DisplayUnit = DisplayUnit.AutoKilobytes,
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.Equal(DisplayUnit.AutoKilobytes, bar.DisplayUnit);
+        Assert.True(bar.IsEnabled);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.displayUnit");
+    }
+
+    // ---- User-requested addition: optional label-replacing icon ----
+
+    [Fact]
+    public void LabelIcon_KnownId_IsPreservedWithoutAWarning()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = SensorKeys.NetworkDown,
+            Label = "Download",
+            LabelIcon = "download",
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.Equal("download", bar.LabelIcon);
+        Assert.Equal("Download", bar.Label);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.labelIcon");
+    }
+
+    [Fact]
+    public void LabelIcon_UnknownId_IsClearedWithAWarning()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = SensorKeys.NetworkDown,
+            Label = "Download",
+            LabelIcon = "not-a-real-icon",
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.Null(bar.LabelIcon);
+        Assert.Equal("Download", bar.Label);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.labelIcon");
+    }
+
+    [Fact]
+    public void LabelIcon_Missing_StaysNullWithoutAWarning()
+    {
+        var bar = new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = SensorKeys.NetworkDown,
+            Label = "Download",
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(bar));
+
+        Assert.Null(bar.LabelIcon);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.labelIcon");
+    }
+
     // ---- Rate default scale (user-reported fix: a rate bar/gauge was always full) ----
 
     [Fact]

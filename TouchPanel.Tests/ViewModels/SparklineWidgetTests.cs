@@ -387,6 +387,7 @@ public sealed class SparklineWidgetTests
 
     [Theory]
     [InlineData(DisplayUnit.Auto, "1 MB/s")]
+    [InlineData(DisplayUnit.AutoKilobytes, "1 MB/s")]
     [InlineData(DisplayUnit.Bytes, "1048576 B/s")]
     [InlineData(DisplayUnit.Kilobytes, "1024 KB/s")]
     [InlineData(DisplayUnit.Megabytes, "1 MB/s")]
@@ -401,6 +402,24 @@ public sealed class SparklineWidgetTests
             history);
 
         Assert.Equal(expected, viewModel.ValueText);
+    }
+
+    [Fact]
+    public void ValueText_AutoKilobytes_ShowsKBBelowTheThresholdAndMBAboveIt()
+    {
+        var history = new FakeSensorHistory();
+        history.Set(SensorKeys.NetworkDown, 524288);
+
+        var viewModel = new SparklineWidgetViewModel(
+            CreateConfig(sensor: SensorKeys.NetworkDown, displayUnit: DisplayUnit.AutoKilobytes),
+            history);
+
+        Assert.Equal("512 KB/s", viewModel.ValueText);
+
+        history.Set(SensorKeys.NetworkDown, 1572864);
+        viewModel.ApplyConfig(CreateConfig(sensor: SensorKeys.NetworkDown, displayUnit: DisplayUnit.AutoKilobytes));
+
+        Assert.Equal("1.5 MB/s", viewModel.ValueText);
     }
 
     [Fact]

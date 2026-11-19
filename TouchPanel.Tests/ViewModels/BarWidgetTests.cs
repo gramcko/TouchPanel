@@ -269,6 +269,33 @@ public sealed class BarWidgetTests
         Assert.Equal("1572864 B", bar.ValueText);
     }
 
+    [Fact]
+    public void RateSensor_AutoKilobytes_SwitchesKBAndMBLive()
+    {
+        // User-requested addition: the download bar's thousands-of-KB readout becomes KB below the
+        // 1024 KB threshold and MB at or above it, following the rate up and down.
+        var source = new FakeSnapshotSource();
+        var bar = new BarWidgetViewModel(
+            CreateConfig(sensor: SensorKeys.NetworkDown, displayUnit: DisplayUnit.AutoKilobytes),
+            source);
+
+        source.Publish(Network(524288));
+        Assert.Equal("512 KB/s", bar.ValueText);
+
+        source.Publish(Network(1048576));
+        Assert.Equal("1 MB/s", bar.ValueText);
+
+        source.Publish(Network(1572864));
+        Assert.Equal("1.5 MB/s", bar.ValueText);
+
+        source.Publish(Network(2048));
+        Assert.Equal("2 KB/s", bar.ValueText);
+
+        // Live re-format through ApplyConfig, without a rebuild.
+        bar.ApplyConfig(CreateConfig(sensor: SensorKeys.NetworkDown, displayUnit: DisplayUnit.AutoKilobytes));
+        Assert.Equal("2 KB/s", bar.ValueText);
+    }
+
     private static SensorSnapshot Ram(double? value) => new()
     {
         CapturedAt = DateTimeOffset.UnixEpoch,

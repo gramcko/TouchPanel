@@ -151,6 +151,91 @@ public sealed class WidgetIconPackRefreshTests
     }
 
     [Fact]
+    public void LabelIconGlyph_ResolvesThroughTheActivePack_AndFallsBackToTheDefaultGlyph()
+    {
+        // User-requested addition: the label-replacing icon uses the same pack resolution as the
+        // primary icon. `download` is not overridden by any pack, so it falls back to the default
+        // catalog glyph while `star` follows the active pack override.
+        var state = new AppearanceState();
+        using var bar = new BarWidgetViewModel(new BarWidgetConfig
+        {
+            Id = "w8",
+            Label = "Download",
+            LabelIcon = "download",
+            Width = 240,
+            Height = 64,
+        });
+
+        bar.AttachAppearanceSource(state);
+
+        Assert.True(bar.HasLabelIcon);
+        Assert.Equal(IconCatalog.GlyphFor("download"), bar.LabelIconGlyph);
+        Assert.Equal("\uE896", bar.LabelIconGlyph);
+        Assert.Equal("Download", bar.Label);
+
+        state.SetIconPack(IconPackIds.Filled);
+
+        // Pack fallback: an id the filled pack does not list keeps the default glyph.
+        Assert.Equal(IconCatalog.GlyphFor("download"), bar.LabelIconGlyph);
+
+        // A pack-overridden id follows the pack.
+        bar.ApplyConfig(new BarWidgetConfig
+        {
+            Id = "w8",
+            Label = "Download",
+            LabelIcon = "star",
+            Width = 240,
+            Height = 64,
+        });
+
+        Assert.Equal(IconPackCatalog.GlyphFor(IconPackIds.Filled, "star"), bar.LabelIconGlyph);
+    }
+
+    [Fact]
+    public void LabelIconGlyph_ReResolvesOnLiveConfigApply_AndClears()
+    {
+        using var bar = new BarWidgetViewModel(new BarWidgetConfig
+        {
+            Id = "w9",
+            Label = "Download",
+            LabelIcon = "download",
+            Width = 240,
+            Height = 64,
+        });
+
+        var changes = new List<string?>();
+        bar.PropertyChanged += (_, args) => changes.Add(args.PropertyName);
+
+        bar.ApplyConfig(new BarWidgetConfig
+        {
+            Id = "w9",
+            Label = "Download",
+            LabelIcon = "upload",
+            Width = 240,
+            Height = 64,
+        });
+
+        Assert.Equal("\uE898", bar.LabelIconGlyph);
+        Assert.True(bar.HasLabelIcon);
+        Assert.Contains(nameof(BarWidgetViewModel.LabelIconGlyph), changes);
+        Assert.Contains(nameof(BarWidgetViewModel.HasLabelIcon), changes);
+
+        // Clearing the icon restores the text label; the label text is retained throughout.
+        bar.ApplyConfig(new BarWidgetConfig
+        {
+            Id = "w9",
+            Label = "Download",
+            LabelIcon = null,
+            Width = 240,
+            Height = 64,
+        });
+
+        Assert.Null(bar.LabelIconGlyph);
+        Assert.False(bar.HasLabelIcon);
+        Assert.Equal("Download", bar.Label);
+    }
+
+    [Fact]
     public void Registry_AttachesTheSharedAppearanceSourceToCreatedWidgets()
     {
         var state = new AppearanceState();

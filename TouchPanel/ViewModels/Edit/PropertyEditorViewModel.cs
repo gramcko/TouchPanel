@@ -60,6 +60,7 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
     private string _initialValueText;
     private string _windowText;
     private IconOption _selectedIcon = NoneIcon;
+    private IconOption _selectedLabelIcon = NoneIcon;
     private string _foregroundText = string.Empty;
     private string _backgroundText = string.Empty;
     private string _accentText = string.Empty;
@@ -165,7 +166,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         var iconOptions = new List<IconOption>(IconCatalog.BuiltIn.Count + 1) { NoneIcon };
         iconOptions.AddRange(IconCatalog.BuiltIn);
         IconOptions = iconOptions;
+
+        // The label-icon picker offers exactly the same "none + built-in catalog" entries; an
+        // unknown configured id shows as "none" (validation clears it on load).
+        LabelIconOptions = iconOptions;
         _selectedIcon = IconCatalog.TryGet(config.Icon, out var icon) ? icon : NoneIcon;
+        _selectedLabelIcon = IconCatalog.TryGet(config.LabelIcon, out var labelIcon) ? labelIcon : NoneIcon;
         _foregroundText = config.Foreground ?? _themeDefaults.Foreground;
         _backgroundText = config.Background ?? _themeDefaults.Background;
         _accentText = config.Accent ?? _themeDefaults.Accent;
@@ -180,6 +186,7 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         DisplayUnitOptions =
         [
             new(DisplayUnit.Auto, "Auto"),
+            new(DisplayUnit.AutoKilobytes, "Auto (KB/MB)"),
             new(DisplayUnit.Bytes, "B"),
             new(DisplayUnit.Kilobytes, "KB"),
             new(DisplayUnit.Megabytes, "MB"),
@@ -332,7 +339,8 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
 
     /// <summary>
     /// Gets the selectable byte/data-rate display units, headed by "auto" (the default and the
-    /// human-friendly existing behavior). The unknown sentinel is never offered.
+    /// human-friendly existing behavior) and "auto (KB/MB)" (binary KB below 1024 KB, MB at or above
+    /// it). The unknown sentinel is never offered.
     /// </summary>
     public IReadOnlyList<DisplayUnitOption> DisplayUnitOptions { get; }
 
@@ -982,6 +990,49 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
             }
 
             image.Stretch = value;
+            OnPropertyChanged();
+            CommitConfig();
+        }
+    }
+
+    /// <summary>
+    /// Gets a value indicating whether the edited widget renders a distinct label element that the
+    /// optional label icon can replace (user-requested addition): Bar, Gauge, Sparkline, and Slider.
+    /// </summary>
+    public bool SupportsLabelIcon => _config is BarWidgetConfig or GaugeWidgetConfig or SparklineWidgetConfig or SliderWidgetConfig;
+
+    /// <summary>
+    /// Gets the entries offered by the label-icon picker (user-requested addition): "(none)" plus the
+    /// built-in icon catalog. Selecting an entry renders that icon instead of the label text; the
+    /// label text itself is retained and returns as soon as "(none)" is selected.
+    /// </summary>
+    public IReadOnlyList<IconOption> LabelIconOptions { get; }
+
+    /// <summary>
+    /// Gets or sets the icon rendered in place of the widget's label text (user-requested addition).
+    /// Selecting "(none)" clears <see cref="WidgetConfig.LabelIcon"/> and restores the text label; a
+    /// chosen catalog entry stores its stable id, is projected live, and marks the layout dirty.
+    /// </summary>
+    public IconOption SelectedLabelIcon
+    {
+        get => _selectedLabelIcon;
+        set
+        {
+            var option = value ?? NoneIcon;
+            if (string.Equals(_selectedLabelIcon.Id, option.Id, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            // Same containment as the primary icon picker: only built-in catalog ids may be persisted.
+            if (option.Id.Length > 0 && !IconCatalog.TryGet(option.Id, out _))
+            {
+                SetError("Label icon must be one of the built-in icons.");
+                return;
+            }
+
+            _selectedLabelIcon = option;
+            _config.LabelIcon = option.Id.Length == 0 ? null : option.Id;
             OnPropertyChanged();
             CommitConfig();
         }

@@ -303,6 +303,20 @@ public sealed class GaugeWidgetViewModel : WidgetViewModelBase
             return FormatBytes(bytes) + (perSecond ? "/s" : string.Empty);
         }
 
+        // User-requested addition: automatic binary KB/MB switching. Below 1024 KB the value stays
+        // in KB (thousands are easier to read for slow traffic); at or above 1,048,576 bytes it
+        // switches to MB, so a real network rate never shows thousands of KB. The threshold uses the
+        // magnitude so a signed value switches symmetrically; zero renders as "0 KB".
+        if (displayUnit == DisplayUnit.AutoKilobytes)
+        {
+            const double Kilobyte = 1024d;
+            const double Megabyte = Kilobyte * 1024d;
+            var autoText = Math.Abs(bytes) >= Megabyte
+                ? FormatNumber(bytes / Megabyte) + " MB"
+                : FormatNumber(bytes / Kilobyte) + " KB";
+            return perSecond ? autoText + "/s" : autoText;
+        }
+
         var (divisor, suffix) = displayUnit switch
         {
             DisplayUnit.Kilobytes => (1024d, "KB"),

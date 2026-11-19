@@ -530,6 +530,16 @@ public static class ConfigValidator
                 $"Widget '{widget.Id}' referenced an icon that is not in the built-in catalog; no icon is shown."));
         }
 
+        // User-requested addition: an optional icon that replaces the label text. It is additive, so
+        // a missing/null value stays null (the text label renders) and only an unknown id is cleared.
+        if (widget.LabelIcon is not null && !IconCatalog.TryGet(widget.LabelIcon, out _))
+        {
+            widget.LabelIcon = null;
+            diagnostics.Add(ConfigDiagnostic.Warning(
+                "config.widget.labelIcon",
+                $"Widget '{widget.Id}' referenced a label icon that is not in the built-in catalog; no label icon is shown."));
+        }
+
         NormalizeColor("foreground", widget.Foreground, value => widget.Foreground = value, widget, diagnostics);
         NormalizeColor("background", widget.Background, value => widget.Background = value, widget, diagnostics);
         NormalizeColor("accent", widget.Accent, value => widget.Accent = value, widget, diagnostics);

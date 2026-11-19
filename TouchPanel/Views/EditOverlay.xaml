@@ -611,6 +611,27 @@
                                          Style="{StaticResource EditPropertyTextBoxStyle}" />
 
                                 <!--
+                                    User-requested addition: an optional icon rendered instead of the
+                                    label text for the widgets that show a label (Bar/Gauge/
+                                    Sparkline/Slider). "None" keeps the text; the text is retained
+                                    either way, so clearing the icon restores it.
+                                -->
+                                <StackPanel x:Name="LabelIconSection"
+                                            Focusable="False"
+                                            Visibility="{Binding SupportsLabelIcon, Converter={StaticResource EditModeVisibilityConverter}}">
+                                    <TextBlock Text="Label icon" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <!--
+                                        The catalog has 45+ entries, so an inline two-column tile
+                                        list replaces the ComboBox: it lives in this scroll surface,
+                                        so the panel's touch pan scrolls over the tiles and a tap
+                                        applies the entry (then collapses).
+                                    -->
+                                    <controls:InlineIconPicker x:Name="LabelIconPicker"
+                                                               ItemsSource="{Binding LabelIconOptions}"
+                                                               SelectedItem="{Binding SelectedLabelIcon, Mode=TwoWay}" />
+                                </StackPanel>
+
+                                <!--
                                     T-14 label/icon/colors (RF-043/M2-RF-435/M2-RF-436): pick a built-in
                                     icon and apply per-widget appearance overrides. Empty fields mean
                                     "use the theme default". Touch-first and dialog-less.
@@ -619,13 +640,10 @@
                                             Focusable="False"
                                             Visibility="{Binding SupportsAppearance, Converter={StaticResource EditModeVisibilityConverter}}">
                                     <TextBlock Text="Icon" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                    <ComboBox x:Name="IconBox"
-                                              MinHeight="40"
-                                              FontSize="15"
-                                              HorizontalAlignment="Stretch"
-                                              ItemsSource="{Binding IconOptions}"
-                                              DisplayMemberPath="DisplayName"
-                                              SelectedItem="{Binding SelectedIcon}" />
+                                    <!-- Long catalog: inline tile picker instead of a ComboBox. -->
+                                    <controls:InlineIconPicker x:Name="IconPicker"
+                                                               ItemsSource="{Binding IconOptions}"
+                                                               SelectedItem="{Binding SelectedIcon, Mode=TwoWay}" />
 
                                     <TextBlock Text="Foreground (#RRGGBB)" Style="{StaticResource EditPropertySectionLabelStyle}" />
                                     <TextBox x:Name="ForegroundBox"

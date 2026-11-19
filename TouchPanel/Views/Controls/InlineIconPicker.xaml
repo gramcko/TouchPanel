@@ -1,0 +1,183 @@
+<UserControl x:Class="TouchPanel.Views.Controls.InlineIconPicker"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:TouchPanel.Views.Controls"
+             Focusable="False"
+             Stylus.IsPressAndHoldEnabled="False"
+             Stylus.IsFlicksEnabled="False">
+
+    <!--
+        User-requested replacement for the long icon drop-downs: the icon catalogs have 45+ entries,
+        which a ComboBox popup handles badly on touch (the popup is a separate visual tree, so the
+        property panel's pan does not apply). This picker lives inside the panel flow: a touch-sized
+        header shows the current entry and toggles an inline list of tiles. Each tile is a normal
+        Button, so a tap applies the icon and collapses; a vertical drag is consumed by the panel's
+        TouchPan behavior before the button can promote a click, so dragging over the tiles scrolls
+        the panel. No Popup, no second ScrollViewer, no nested focus chain.
+    -->
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/TouchPanel;component/Theme/Styles.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <BooleanToVisibilityConverter x:Key="InlinePickerVisibilityConverter" />
+            <local:IconOptionSelectedConverter x:Key="IconOptionSelectedConverter" />
+
+            <!-- Collapsed header: themed like the surrounding fields, >= 40 DIP, tap toggles. -->
+            <Style x:Key="InlinePickerHeaderStyle" TargetType="Button">
+                <Setter Property="MinHeight" Value="40" />
+                <Setter Property="Padding" Value="10,6" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+                <Setter Property="FontSize" Value="15" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="HeaderSurface"
+                                    Background="{DynamicResource WidgetSurfaceBrush}"
+                                    BorderBrush="{DynamicResource WidgetBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="HeaderSurface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                                    <Setter TargetName="HeaderSurface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- One inline tile: >= 44 DIP tall, its own press feedback, accent border when selected. -->
+            <Style x:Key="InlinePickerTileStyle" TargetType="Button">
+                <Setter Property="MinHeight" Value="44" />
+                <Setter Property="Margin" Value="2" />
+                <Setter Property="Padding" Value="8,6" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+                <Setter Property="FontSize" Value="13" />
+                <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="TileSurface"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="TileSurface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+                <Style.Triggers>
+                    <DataTrigger Value="True">
+                        <DataTrigger.Binding>
+                            <MultiBinding Converter="{StaticResource IconOptionSelectedConverter}">
+                                <Binding />
+                                <Binding Path="SelectedItem"
+                                         RelativeSource="{RelativeSource AncestorType={x:Type local:InlineIconPicker}}" />
+                            </MultiBinding>
+                        </DataTrigger.Binding>
+                        <Setter Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                        <Setter Property="BorderThickness" Value="2" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <StackPanel Focusable="False">
+        <Button x:Name="PickerHeader"
+                Style="{StaticResource InlinePickerHeaderStyle}"
+                Click="OnHeaderClick">
+            <DockPanel LastChildFill="True">
+                <TextBlock DockPanel.Dock="Left"
+                           Text="{Binding SelectedItem.Glyph, RelativeSource={RelativeSource AncestorType={x:Type local:InlineIconPicker}}}"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="16"
+                           Margin="0,0,8,0"
+                           VerticalAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Value="">
+                                    <DataTrigger.Binding>
+                                        <Binding Path="SelectedItem.Id"
+                                                 RelativeSource="{RelativeSource AncestorType={x:Type local:InlineIconPicker}}" />
+                                    </DataTrigger.Binding>
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+                <TextBlock DockPanel.Dock="Right"
+                           Text="&#x25BE;"
+                           Margin="8,0,0,0"
+                           Opacity="0.7"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="{Binding SelectedItem.DisplayName, RelativeSource={RelativeSource AncestorType={x:Type local:InlineIconPicker}}}"
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Button>
+
+        <ItemsControl x:Name="PickerTiles"
+                      ItemsSource="{Binding ItemsSource, RelativeSource={RelativeSource AncestorType={x:Type local:InlineIconPicker}}}"
+                      Focusable="False"
+                      Margin="0,4,0,0"
+                      Visibility="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType={x:Type local:InlineIconPicker}}, Converter={StaticResource InlinePickerVisibilityConverter}}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <!-- Two columns inside the 300 DIP property panel (user-specified layout). -->
+                    <UniformGrid Columns="2" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Button Style="{StaticResource InlinePickerTileStyle}"
+                            Click="OnTileClick"
+                            ToolTip="{Binding DisplayName}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="22" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Glyph}"
+                                       FontFamily="Segoe MDL2 Assets"
+                                       FontSize="15"
+                                       VerticalAlignment="Center" />
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding DisplayName}"
+                                       VerticalAlignment="Center"
+                                       TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                    </Button>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </StackPanel>
+</UserControl>

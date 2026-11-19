@@ -290,11 +290,73 @@ public sealed class EditOverlayTests
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
             var unitBox = content.FindName("DisplayUnitBox") as ComboBox;
-            return (unitBox is not null, unitBox?.Items.Count ?? 0);
+            var sensorBox = content.FindName("SensorBox") as ComboBox;
+            var iconPicker = content.FindName("IconPicker") as InlineIconPicker;
+            var labelIconPicker = content.FindName("LabelIconPicker") as InlineIconPicker;
+            var labelIconSection = content.FindName("LabelIconSection") as FrameworkElement;
+            return (
+                UnitBox: unitBox is not null,
+                UnitCount: unitBox?.Items.Count ?? 0,
+                SensorBox: sensorBox is not null,
+                SensorCount: sensorBox?.Items.Count ?? 0,
+                IconPicker: iconPicker is not null,
+                IconCount: iconPicker?.ItemsSource?.Cast<object>().Count() ?? 0,
+                LabelIconPicker: labelIconPicker is not null,
+                LabelIconCount: labelIconPicker?.ItemsSource?.Cast<object>().Count() ?? 0,
+                LabelIconVisibility: labelIconSection?.Visibility ?? Visibility.Collapsed);
         });
 
-        Assert.True(result.Item1, "The Gauge editor must expose a display-unit selector.");
-        Assert.Equal(5, result.Item2);
+        Assert.True(result.UnitBox, "The Gauge editor must expose a display-unit selector.");
+        Assert.Equal(6, result.UnitCount);
+
+        // Only the two long icon catalogs switched to the inline picker; the shorter Sensor list
+        // stays a ComboBox (its entries are dynamic and long, with no glyph preview).
+        Assert.True(result.SensorBox, "The shorter Sensor list must stay a ComboBox.");
+        Assert.True(result.SensorCount > 0);
+
+        // User-requested addition: the Gauge renders a distinct label element, so the Label icon
+        // picker is offered (None + built-in catalog). Both long icon lists use the inline picker
+        // (collapsed) rather than a ComboBox.
+        Assert.True(result.LabelIconPicker, "The Gauge editor must expose a label-icon picker.");
+        Assert.True(result.LabelIconCount > 1, "The label-icon picker must offer None plus the catalog.");
+        Assert.True(result.IconPicker, "The Gauge editor must expose the widget icon picker.");
+        Assert.True(result.IconCount > 1, "The widget icon picker must offer the catalog.");
+        Assert.Equal(Visibility.Visible, result.LabelIconVisibility);
+    }
+
+    [Fact]
+    public async Task Overlay_HidesTheLabelIconSelectorForAWidgetWithoutADistinctLabel()
+    {
+        using var sta = new StaThread();
+
+        var visibility = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            service.Enter(1024, 600);
+            service.SelectWidget(page.Widgets[0]);
+            service.OpenPropertyEditor();
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var panel = Assert.IsType<Border>(overlay.FindName("PropertyPanel"));
+            var contentControl = Assert.IsType<ContentControl>(panel.Child);
+            var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
+            content.DataContext = contentControl.Content;
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            // A Label widget shows its text as the widget itself; the label-icon option only applies
+            // to the widgets with a distinct label element (Bar/Gauge/Sparkline/Slider).
+            var section = Assert.IsType<StackPanel>(content.FindName("LabelIconSection"));
+            return section.Visibility;
+        });
+
+        Assert.Equal(Visibility.Collapsed, visibility);
     }
 
     [Fact]

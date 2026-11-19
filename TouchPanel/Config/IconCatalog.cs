@@ -66,6 +66,8 @@ public static class IconCatalog
         new("game", "\uE7FC", "Game"),
         new("map", "\uE707", "Map"),
         new("microphone", "\uE720", "Microphone"),
+        new("download", "\uE896", "Download"),
+        new("upload", "\uE898", "Upload"),
     ];
 
     /// <summary>Looks up a catalog entry by its persisted id.</summary>

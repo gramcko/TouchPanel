@@ -256,6 +256,65 @@ public sealed class ConfigJsonCustomizationTests
         Assert.Equal(DisplayUnit.Auto, sparkline.DisplayUnit);
     }
 
+    [Fact]
+    public void BarWidget_AutoKilobytesDisplayUnit_RoundTripsAndReadsCaseInsensitively()
+    {
+        // User-requested addition: the automatic binary KB/MB unit persists through the existing
+        // lenient enum converter, which reads the value case-insensitively.
+        var original = CreatePanel(new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = "net.down",
+            DisplayUnit = DisplayUnit.AutoKilobytes,
+        });
+
+        var json = JsonSerializer.Serialize(original, ConfigJson.Options);
+        var restored = JsonSerializer.Deserialize<PanelConfig>(json, ConfigJson.Options)!;
+
+        Assert.Contains("\"displayUnit\": \"autoKilobytes\"", json, StringComparison.Ordinal);
+        Assert.Equal(
+            DisplayUnit.AutoKilobytes,
+            Assert.IsType<BarWidgetConfig>(restored.Pages[0].Widgets[0]).DisplayUnit);
+
+        var mixedCase = JsonSerializer.Deserialize<WidgetConfig>(
+            """{ "type": "bar", "id": "b", "sensor": "net.down", "displayUnit": "AUTOKILOBYTES" }""",
+            ConfigJson.Options)!;
+
+        Assert.Equal(DisplayUnit.AutoKilobytes, Assert.IsType<BarWidgetConfig>(mixedCase).DisplayUnit);
+    }
+
+    [Fact]
+    public void WidgetLabelIcon_RoundTripsAndDefaultsToNull()
+    {
+        // User-requested addition: an optional label-replacing icon on the base widget config. It is
+        // additive, so older files (no field) keep loading with no label icon.
+        var original = CreatePanel(new BarWidgetConfig
+        {
+            Id = "bar",
+            Width = 240,
+            Height = 64,
+            Sensor = "net.down",
+            Label = "Download",
+            LabelIcon = "download",
+        });
+
+        var json = JsonSerializer.Serialize(original, ConfigJson.Options);
+        var restored = JsonSerializer.Deserialize<PanelConfig>(json, ConfigJson.Options)!;
+
+        Assert.Contains("\"labelIcon\": \"download\"", json, StringComparison.Ordinal);
+        var bar = Assert.IsType<BarWidgetConfig>(restored.Pages[0].Widgets[0]);
+        Assert.Equal("download", bar.LabelIcon);
+        Assert.Equal("Download", bar.Label);
+
+        var olderJson = JsonSerializer.Deserialize<WidgetConfig>(
+            """{ "type": "bar", "id": "b", "sensor": "net.down", "label": "Download" }""",
+            ConfigJson.Options)!;
+
+        Assert.Null(olderJson.LabelIcon);
+    }
+
     private static PanelConfig CreatePanel(WidgetConfig widget) =>
         new()
         {

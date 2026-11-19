@@ -59,6 +59,7 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     private Brush? _accentBrush;
     private IAppearanceSource? _appearanceSource;
     private string? _iconId;
+    private string? _labelIconId;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WidgetViewModelBase"/> class by projecting the
@@ -132,6 +133,21 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
 
     /// <summary>Gets a value indicating whether a built-in icon is configured for this widget.</summary>
     public bool HasIcon => IconGlyph is not null;
+
+    /// <summary>
+    /// Gets the glyph of the configured label icon, or <see langword="null"/> when no label icon is
+    /// set (user-requested addition). When present, templates render it <em>in place of</em> the
+    /// widget's <see cref="Label"/> text. It uses the same active-icon-pack resolution as
+    /// <see cref="IconGlyph"/> (see <see cref="WidgetIconResolver"/>), so pack overrides and the
+    /// default-pack fallback behave identically, and it re-resolves live when the pack changes.
+    /// </summary>
+    public string? LabelIconGlyph { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether a label icon replaces this widget's label text. Templates show
+    /// the icon when <see langword="true"/> and the label <see cref="TextBlock"/> otherwise.
+    /// </summary>
+    public bool HasLabelIcon => LabelIconGlyph is not null;
 
     /// <summary>Gets the configured background-color override, or <see langword="null"/> for the theme default.</summary>
     public Brush? BackgroundBrush => _backgroundBrush;
@@ -281,7 +297,8 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     private void ApplyAppearance(WidgetConfig config)
     {
         _iconId = config.Icon;
-        UpdateIconGlyph();
+        _labelIconId = config.LabelIcon;
+        UpdateIconGlyphs();
 
         SetBrush(ref _backgroundBrush, nameof(BackgroundBrush), AppearanceBrushFactory.Create(config.Background));
         SetBrush(ref _foregroundBrush, nameof(ForegroundBrush), AppearanceBrushFactory.Create(config.Foreground));
@@ -327,14 +344,20 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
             source.AppearanceChanged += OnAppearanceChanged;
         }
 
-        UpdateIconGlyph();
+        UpdateIconGlyphs();
     }
 
-    private void OnAppearanceChanged(object? sender, EventArgs e) => PostToUi(UpdateIconGlyph);
+    private void OnAppearanceChanged(object? sender, EventArgs e) => PostToUi(UpdateIconGlyphs);
+
+    private void UpdateIconGlyphs()
+    {
+        UpdateIconGlyph();
+        UpdateLabelIconGlyph();
+    }
 
     private void UpdateIconGlyph()
     {
-        var glyph = IconPackCatalog.GlyphFor(_appearanceSource?.ActiveIconPackId, _iconId);
+        var glyph = WidgetIconResolver.ResolveGlyph(_appearanceSource?.ActiveIconPackId, _iconId);
         if (string.Equals(IconGlyph, glyph, StringComparison.Ordinal))
         {
             return;
@@ -344,6 +367,25 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
         OnPropertyChanged(nameof(IconGlyph));
         OnPropertyChanged(nameof(HasIcon));
         OnIconGlyphChanged();
+    }
+
+    /// <summary>
+    /// Re-resolves the label-replacing icon through the same active-pack path as
+    /// <see cref="IconGlyph"/> (user-requested addition), raising notifications only when the glyph
+    /// actually changed. Runs on construction, on every config apply, and on a live pack change, so
+    /// the icon never needs a rebuild.
+    /// </summary>
+    private void UpdateLabelIconGlyph()
+    {
+        var glyph = WidgetIconResolver.ResolveGlyph(_appearanceSource?.ActiveIconPackId, _labelIconId);
+        if (string.Equals(LabelIconGlyph, glyph, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        LabelIconGlyph = glyph;
+        OnPropertyChanged(nameof(LabelIconGlyph));
+        OnPropertyChanged(nameof(HasLabelIcon));
     }
 
     /// <summary>
