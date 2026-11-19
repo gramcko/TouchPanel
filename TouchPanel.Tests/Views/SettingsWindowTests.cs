@@ -31,6 +31,8 @@ public sealed class SettingsWindowTests
             var window = CreateWindow(out var pickerView);
             try
             {
+                WindowIconAssert.IsPackagedAppIcon(window);
+
                 // Force data binding so the enabled/bound state reflects the view model even though
                 // the window is never shown.
                 window.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);

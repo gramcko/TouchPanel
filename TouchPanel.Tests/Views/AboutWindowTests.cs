@@ -27,6 +27,7 @@ public sealed class AboutWindowTests
             var window = new AboutWindow(viewModel);
             try
             {
+                WindowIconAssert.IsPackagedAppIcon(window);
                 window.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
                 var appName = Assert.IsType<TextBlock>(window.FindName("AppNameText"));

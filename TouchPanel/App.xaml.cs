@@ -459,7 +459,7 @@ public partial class App : Application, IPanelConfigApplyTarget
             _trayService = new TrayService(
                 new TrayIconAdapter(new TrayIcon()),
                 _logger,
-                TrayServiceOptions.Default with { IconHandle = StockIcon.LoadApplicationIcon() });
+                TrayServiceOptions.Default with { IconHandle = ApplicationIcon.LoadTrayIcon() });
             _trayService.CommandSelected += OnTrayCommandSelected;
 
             // T-12/RF-005/RF-026: the checkable Edit Mode item after Show/Hide Panel; its checked

@@ -31,6 +31,7 @@ public sealed class HotkeysEditorWindowTests
             var window = new HotkeysEditorWindow(viewModel);
             try
             {
+                WindowIconAssert.IsPackagedAppIcon(window);
                 window.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
                 var list = Assert.IsType<ListView>(window.FindName("HotkeyList"));

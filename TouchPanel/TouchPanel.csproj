@@ -10,6 +10,10 @@
     <RootNamespace>TouchPanel</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
 
+    <!-- The PE/executable icon. The same .ico is packed as a WPF resource below so the tray can
+         extract it from the running exe and every visible window can set its title-bar icon. -->
+    <ApplicationIcon>Assets\touchpanel.ico</ApplicationIcon>
+
     <!-- User-requested About window: the one explicit version source. The About UI reads the
          resulting assembly informational version (Services/Updates/AppInfo.cs), so the displayed
          version and the update comparison can never drift from the build. Build metadata is kept
@@ -41,6 +45,11 @@
   <ItemGroup>
     <!-- T-05: unit tests exercise the pure callback/truncation logic of Interop.TrayIcon. -->
     <InternalsVisibleTo Include="TouchPanel.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pack URI resource for Window.Icon (pack://application:,,,/TouchPanel;component/Assets/...). -->
+    <Resource Include="Assets\touchpanel.ico" />
   </ItemGroup>
 
 </Project>

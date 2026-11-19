@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:controls="clr-namespace:TouchPanel.Views.Controls"
         Title="TouchPanel Setup"
+        Icon="/TouchPanel;component/Assets/touchpanel.ico"
         Width="640"
         SizeToContent="Height"
         MaxHeight="760"

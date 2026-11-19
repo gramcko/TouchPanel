@@ -22,4 +22,15 @@
     <ProjectReference Include="..\TouchPanel\TouchPanel.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Preview PNGs live next to the icon asset; tests only read them, so copy them beside the
+         test assembly instead of embedding them in the application. -->
+    <None Include="..\TouchPanel\Assets\touchpanel-16.png"
+          Link="Assets\touchpanel-16.png"
+          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\TouchPanel\Assets\touchpanel-256.png"
+          Link="Assets\touchpanel-256.png"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

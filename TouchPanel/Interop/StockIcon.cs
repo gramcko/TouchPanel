@@ -5,9 +5,9 @@ namespace TouchPanel.Interop;
 
 /// <summary>
 /// Loads shared system stock icons used as native resource handles (RF-005). The tray icon needs
-/// a real <c>HICON</c> to display; M1 uses the shared default application icon until a dedicated
-/// icon asset exists. Stock icons are owned by the system and must not be destroyed by callers.
-/// All P/Invoke stays under <c>Interop/</c> (RNF-010).
+/// a real <c>HICON</c> to display; this is the fallback used when the application's own embedded
+/// icon cannot be extracted (see <see cref="ApplicationIcon"/>). Stock icons are owned by the
+/// system and must not be destroyed by callers. All P/Invoke stays under <c>Interop/</c> (RNF-010).
 /// </summary>
 internal static class StockIcon
 {

@@ -28,6 +28,7 @@ public sealed class FirstRunSetupWindowTests
             var window = new FirstRunSetupWindow(viewModel);
             try
             {
+                WindowIconAssert.IsPackagedAppIcon(window);
                 window.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
                 var list = Assert.IsType<ListBox>(window.FindName("MonitorList"));

@@ -5,6 +5,7 @@
         xmlns:settingsViews="clr-namespace:TouchPanel.Views.Settings"
         xmlns:controls="clr-namespace:TouchPanel.Views.Controls"
         Title="TouchPanel Settings"
+        Icon="/TouchPanel;component/Assets/touchpanel.ico"
         Width="600"
         Height="760"
         MinWidth="480"

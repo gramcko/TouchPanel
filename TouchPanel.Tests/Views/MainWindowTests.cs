@@ -30,6 +30,8 @@ public sealed class MainWindowTests
             var window = new MainWindow();
             try
             {
+                WindowIconAssert.IsPackagedAppIcon(window);
+
                 var handle = new WindowInteropHelper(window).EnsureHandle();
                 var exStyle = WindowStyles.GetWindowLongPtr(handle, WindowStyles.GwlExStyle);
 
