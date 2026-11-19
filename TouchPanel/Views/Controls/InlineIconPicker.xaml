@@ -114,14 +114,14 @@
                 Style="{StaticResource InlinePickerHeaderStyle}"
                 Click="OnHeaderClick">
             <DockPanel LastChildFill="True">
-                <TextBlock DockPanel.Dock="Left"
-                           Text="{Binding SelectedItem.Glyph, RelativeSource={RelativeSource AncestorType={x:Type local:InlineIconPicker}}}"
-                           FontFamily="Segoe MDL2 Assets"
-                           FontSize="16"
-                           Margin="0,0,8,0"
-                           VerticalAlignment="Center">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
+                <local:WidgetIconPresenter DockPanel.Dock="Left"
+                                           Glyph="{Binding SelectedItem.Glyph, RelativeSource={RelativeSource AncestorType={x:Type local:InlineIconPicker}}}"
+                                           PathData="{Binding SelectedItem.PathData, RelativeSource={RelativeSource AncestorType={x:Type local:InlineIconPicker}}}"
+                                           IconSize="16"
+                                           Margin="0,0,8,0"
+                                           VerticalAlignment="Center">
+                    <local:WidgetIconPresenter.Style>
+                        <Style TargetType="{x:Type local:WidgetIconPresenter}">
                             <Style.Triggers>
                                 <DataTrigger Value="">
                                     <DataTrigger.Binding>
@@ -132,8 +132,8 @@
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                    </local:WidgetIconPresenter.Style>
+                </local:WidgetIconPresenter>
                 <TextBlock DockPanel.Dock="Right"
                            Text="&#x25BE;"
                            Margin="8,0,0,0"
@@ -166,10 +166,10 @@
                                 <ColumnDefinition Width="22" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Glyph}"
-                                       FontFamily="Segoe MDL2 Assets"
-                                       FontSize="15"
-                                       VerticalAlignment="Center" />
+                            <local:WidgetIconPresenter Glyph="{Binding Glyph}"
+                                                       PathData="{Binding PathData}"
+                                                       IconSize="15"
+                                                       VerticalAlignment="Center" />
                             <TextBlock Grid.Column="1"
                                        Text="{Binding DisplayName}"
                                        VerticalAlignment="Center"

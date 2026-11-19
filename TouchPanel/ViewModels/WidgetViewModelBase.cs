@@ -125,29 +125,45 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
 
     /// <summary>
     /// Gets the glyph of the configured built-in icon, or <see langword="null"/> when no icon is set
-    /// (RF-043/M2-RF-435). Resolved through the active icon pack (M3-RF-844/M3-RF-845) via
-    /// <see cref="IconPackCatalog"/> — a missing pack falls back to the default pack glyph — and
-    /// refreshed live when the active pack changes; templates render it with the bundled icon font.
+    /// or the id is a vector-only brand icon (RF-043/M2-RF-435). Resolved through the active icon
+    /// pack (M3-RF-844/M3-RF-845) via <see cref="WidgetIconResolver"/> — a missing pack falls back to
+    /// the default pack glyph — and refreshed live when the active pack changes; templates render it
+    /// with the bundled icon font.
     /// </summary>
     public string? IconGlyph { get; private set; }
 
-    /// <summary>Gets a value indicating whether a built-in icon is configured for this widget.</summary>
-    public bool HasIcon => IconGlyph is not null;
+    /// <summary>
+    /// Gets the vector path of the configured built-in brand icon, or <see langword="null"/> when the
+    /// id is unset, unknown, or a font glyph (user-requested brand icons). Brand ids are
+    /// pack-independent, so this value is identical for every active icon pack.
+    /// </summary>
+    public string? IconPathData { get; private set; }
+
+    /// <summary>Gets a value indicating whether a built-in icon (glyph or vector) is configured for this widget.</summary>
+    public bool HasIcon => IconGlyph is not null || IconPathData is not null;
 
     /// <summary>
     /// Gets the glyph of the configured label icon, or <see langword="null"/> when no label icon is
-    /// set (user-requested addition). When present, templates render it <em>in place of</em> the
-    /// widget's <see cref="Label"/> text. It uses the same active-icon-pack resolution as
-    /// <see cref="IconGlyph"/> (see <see cref="WidgetIconResolver"/>), so pack overrides and the
-    /// default-pack fallback behave identically, and it re-resolves live when the pack changes.
+    /// set or the id is a vector-only brand icon (user-requested addition). When present, templates
+    /// render it <em>in place of</em> the widget's <see cref="Label"/> text. It uses the same
+    /// active-icon-pack resolution as <see cref="IconGlyph"/> (see <see cref="WidgetIconResolver"/>),
+    /// so pack overrides and the default-pack fallback behave identically, and it re-resolves live
+    /// when the pack changes.
     /// </summary>
     public string? LabelIconGlyph { get; private set; }
 
     /// <summary>
-    /// Gets a value indicating whether a label icon replaces this widget's label text. Templates show
-    /// the icon when <see langword="true"/> and the label <see cref="TextBlock"/> otherwise.
+    /// Gets the vector path of the configured label brand icon, or <see langword="null"/> when the
+    /// label icon is unset, unknown, or a font glyph. Brand ids are pack-independent.
     /// </summary>
-    public bool HasLabelIcon => LabelIconGlyph is not null;
+    public string? LabelIconPathData { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether a label icon (glyph or vector) replaces this widget's label
+    /// text. Templates show the icon when <see langword="true"/> and the label <see cref="TextBlock"/>
+    /// otherwise.
+    /// </summary>
+    public bool HasLabelIcon => LabelIconGlyph is not null || LabelIconPathData is not null;
 
     /// <summary>Gets the configured background-color override, or <see langword="null"/> for the theme default.</summary>
     public Brush? BackgroundBrush => _backgroundBrush;
@@ -357,14 +373,28 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
 
     private void UpdateIconGlyph()
     {
-        var glyph = WidgetIconResolver.ResolveGlyph(_appearanceSource?.ActiveIconPackId, _iconId);
-        if (string.Equals(IconGlyph, glyph, StringComparison.Ordinal))
+        var (glyph, path) = ResolveVisual(_iconId);
+        var changed = false;
+
+        if (!string.Equals(IconGlyph, glyph, StringComparison.Ordinal))
+        {
+            IconGlyph = glyph;
+            OnPropertyChanged(nameof(IconGlyph));
+            changed = true;
+        }
+
+        if (!string.Equals(IconPathData, path, StringComparison.Ordinal))
+        {
+            IconPathData = path;
+            OnPropertyChanged(nameof(IconPathData));
+            changed = true;
+        }
+
+        if (!changed)
         {
             return;
         }
 
-        IconGlyph = glyph;
-        OnPropertyChanged(nameof(IconGlyph));
         OnPropertyChanged(nameof(HasIcon));
         OnIconGlyphChanged();
     }
@@ -372,20 +402,41 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     /// <summary>
     /// Re-resolves the label-replacing icon through the same active-pack path as
     /// <see cref="IconGlyph"/> (user-requested addition), raising notifications only when the glyph
-    /// actually changed. Runs on construction, on every config apply, and on a live pack change, so
-    /// the icon never needs a rebuild.
+    /// or vector path actually changed. Runs on construction, on every config apply, and on a live
+    /// pack change, so the icon never needs a rebuild.
     /// </summary>
     private void UpdateLabelIconGlyph()
     {
-        var glyph = WidgetIconResolver.ResolveGlyph(_appearanceSource?.ActiveIconPackId, _labelIconId);
-        if (string.Equals(LabelIconGlyph, glyph, StringComparison.Ordinal))
+        var (glyph, path) = ResolveVisual(_labelIconId);
+        var changed = false;
+
+        if (!string.Equals(LabelIconGlyph, glyph, StringComparison.Ordinal))
         {
-            return;
+            LabelIconGlyph = glyph;
+            OnPropertyChanged(nameof(LabelIconGlyph));
+            changed = true;
         }
 
-        LabelIconGlyph = glyph;
-        OnPropertyChanged(nameof(LabelIconGlyph));
-        OnPropertyChanged(nameof(HasLabelIcon));
+        if (!string.Equals(LabelIconPathData, path, StringComparison.Ordinal))
+        {
+            LabelIconPathData = path;
+            OnPropertyChanged(nameof(LabelIconPathData));
+            changed = true;
+        }
+
+        if (changed)
+        {
+            OnPropertyChanged(nameof(HasLabelIcon));
+        }
+    }
+
+    /// <summary>Resolves one icon id to its paired glyph and vector-path values for the current pack.</summary>
+    private (string? Glyph, string? PathData) ResolveVisual(string? iconId)
+    {
+        var packId = _appearanceSource?.ActiveIconPackId;
+        return (
+            WidgetIconResolver.ResolveGlyph(packId, iconId),
+            WidgetIconResolver.ResolvePathData(packId, iconId));
     }
 
     /// <summary>

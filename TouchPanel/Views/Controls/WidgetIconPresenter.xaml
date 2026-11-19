@@ -1,0 +1,39 @@
+<UserControl x:Class="TouchPanel.Views.Controls.WidgetIconPresenter"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:TouchPanel.Views.Controls"
+             Focusable="False"
+             IsTabStop="False"
+             UseLayoutRounding="True"
+             Stylus.IsPressAndHoldEnabled="False"
+             Stylus.IsFlicksEnabled="False">
+
+    <!--
+        Reusable widget icon presenter (user-requested brand icons). It draws the existing Segoe MDL2
+        glyph when the resolved id is a font icon, or a monochrome Path (uniform stretch, filled with
+        the widget foreground) when the id is one of the simple-icons brand paths. Both live in the
+        same square glyph box, so replacing a TextBlock with this control preserves the surrounding
+        layout. The vector is intentionally drawn at ~82% of the glyph box: a 24x24 solid path reads
+        optically heavier than a font glyph at the same nominal size, so the inset keeps the weights
+        matched; the Path is vertically centred in the box. No code-behind logic beyond DP projection.
+    -->
+    <Grid x:Name="IconBox"
+          HorizontalAlignment="Center"
+          VerticalAlignment="Center"
+          Focusable="False"
+          Background="Transparent">
+        <TextBlock x:Name="GlyphText"
+                   Text="{Binding Glyph, RelativeSource={RelativeSource AncestorType={x:Type local:WidgetIconPresenter}}}"
+                   FontFamily="Segoe MDL2 Assets"
+                   Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type local:WidgetIconPresenter}}}"
+                   HorizontalAlignment="Center"
+                   VerticalAlignment="Center"
+                   Visibility="Collapsed" />
+        <Path x:Name="VectorPath"
+              Stretch="Uniform"
+              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type local:WidgetIconPresenter}}}"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Visibility="Collapsed" />
+    </Grid>
+</UserControl>

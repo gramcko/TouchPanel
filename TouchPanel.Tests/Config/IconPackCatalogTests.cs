@@ -28,7 +28,7 @@ public sealed class IconPackCatalogTests
     [InlineData(IconPackIds.Duotone)]
     public void EveryPack_ResolvesEveryStableIconId(string packId)
     {
-        foreach (var option in IconCatalog.BuiltIn)
+        foreach (var option in IconCatalog.BuiltIn.Where(option => option.HasGlyph))
         {
             Assert.True(
                 IconPackCatalog.TryGetGlyph(packId, option.Id, out var glyph),
@@ -83,7 +83,7 @@ public sealed class IconPackCatalogTests
     [Fact]
     public void DefaultPack_ReproducesTheM2IconCatalog()
     {
-        foreach (var option in IconCatalog.BuiltIn)
+        foreach (var option in IconCatalog.BuiltIn.Where(option => option.HasGlyph))
         {
             Assert.True(IconPackCatalog.TryGetGlyph(IconPackIds.Default, option.Id, out var glyph));
             Assert.Equal(option.Glyph, glyph);

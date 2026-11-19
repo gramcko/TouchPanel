@@ -2,20 +2,40 @@ namespace TouchPanel.Config;
 
 /// <summary>
 /// One selectable entry in the built-in icon catalog (RF-043/M2-RF-435): a stable id stored in
-/// configuration, the glyph rendered by the widget templates (Segoe MDL2 Assets), and a
-/// human-readable name for the edit-mode picker.
+/// configuration, the glyph rendered by the widget templates (Segoe MDL2 Assets) <em>or</em> a
+/// monochrome vector path (brand icons), and a human-readable name for the edit-mode picker.
 /// </summary>
 /// <param name="Id">The stable catalog id persisted in <see cref="WidgetConfig.Icon"/>.</param>
-/// <param name="Glyph">The font glyph rendered by the templates.</param>
+/// <param name="Glyph">
+/// The font glyph rendered by the templates, or empty for a vector-only entry (brand icons).
+/// </param>
 /// <param name="DisplayName">The touch-friendly name shown in the icon picker.</param>
-public sealed record IconOption(string Id, string Glyph, string DisplayName);
+/// <param name="PathData">
+/// The 24x24 SVG path data for a vector-only entry, or <see langword="null"/> for a glyph entry.
+/// Both representations are catalog data; <see cref="WidgetIconResolver"/> is the single resolution
+/// entry point that tells callers which one to render.
+/// </param>
+public sealed record IconOption(
+    string Id,
+    string Glyph,
+    string DisplayName,
+    string? PathData = null)
+{
+    /// <summary>Gets a value indicating whether the entry has an MDL2 glyph to render.</summary>
+    public bool HasGlyph => !string.IsNullOrEmpty(Glyph);
+
+    /// <summary>Gets a value indicating whether the entry is a vector path instead of a glyph.</summary>
+    public bool IsVector => !string.IsNullOrEmpty(PathData);
+}
 
 /// <summary>
 /// The bundled, flat icon catalog (RF-043/M2-RF-435). It is an implementer-chosen fixed set of
 /// built-in glyphs shipped with the application; external icon packs (RF-084) are out of scope.
-/// Ids are stable persisted identifiers, so entries must be added, never renamed.
+/// Ids are stable persisted identifiers, so entries must be added, never renamed. The catalog also
+/// carries ten monochrome brand icons as verbatim simple-icons (CC0 1.0) vector paths; those ids are
+/// pack-independent because no icon pack overrides them.
 /// </summary>
-public static class IconCatalog
+public static partial class IconCatalog
 {
     /// <summary>
     /// The built-in catalog. The count is deliberately small (well within the 1–64 bound of
@@ -68,6 +88,8 @@ public static class IconCatalog
         new("microphone", "\uE720", "Microphone"),
         new("download", "\uE896", "Download"),
         new("upload", "\uE898", "Upload"),
+        new("link", "\uE71B", "Link"),
+        .. CreateBrandIcons(),
     ];
 
     /// <summary>Looks up a catalog entry by its persisted id.</summary>
@@ -96,6 +118,16 @@ public static class IconCatalog
 
     /// <summary>Returns the glyph for a built-in icon id, or <see langword="null"/> when unset/unknown.</summary>
     /// <param name="id">The catalog id.</param>
-    /// <returns>The glyph to render, or <see langword="null"/>.</returns>
-    public static string? GlyphFor(string? id) => TryGet(id, out var option) ? option.Glyph : null;
+    /// <returns>The glyph to render, or <see langword="null"/> for an unknown or vector-only id.</returns>
+    public static string? GlyphFor(string? id) =>
+        TryGet(id, out var option) && option.HasGlyph ? option.Glyph : null;
+
+    /// <summary>
+    /// Returns the vector path data for a built-in icon id, or <see langword="null"/> when the id is
+    /// unset, unknown, or a glyph entry (user-requested brand icons).
+    /// </summary>
+    /// <param name="id">The catalog id.</param>
+    /// <returns>The 24x24 path data to render, or <see langword="null"/>.</returns>
+    public static string? PathDataFor(string? id) =>
+        TryGet(id, out var option) ? option.PathData : null;
 }

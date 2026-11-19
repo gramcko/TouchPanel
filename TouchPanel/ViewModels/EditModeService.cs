@@ -119,6 +119,7 @@ public sealed class EditModeService : INotifyPropertyChanged
     private readonly IClockCultureSource? _clockCulture;
     private readonly ISensorCatalog? _sensorCatalog;
     private readonly IImageFilePicker? _imageFilePicker;
+    private readonly AppPresetDetector _appPresetDetector;
     private bool _isDeleteConfirmationVisible;
     private double _pageWidth;
     private double _pageHeight;
@@ -157,6 +158,10 @@ public sealed class EditModeService : INotifyPropertyChanged
     /// itself through <paramref name="factory"/>; when neither is available, undo/redo restores the
     /// configuration but reports that the live page could not be rebuilt.
     /// </param>
+    /// <param name="appPresetDetector">
+    /// Injectable preset-app detector (user-requested Apps row) so tests can supply fake file and
+    /// directory probes; when <see langword="null"/>, the real filesystem detector is used.
+    /// </param>
     /// <exception cref="ArgumentNullException">Thrown when a required dependency is <see langword="null"/>.</exception>
     public EditModeService(
         PanelConfig config,
@@ -170,7 +175,8 @@ public sealed class EditModeService : INotifyPropertyChanged
         IClockCultureSource? clockCulture = null,
         ISensorCatalog? sensorCatalog = null,
         IImageFilePicker? imageFilePicker = null,
-        Func<PanelConfig, PageViewModel?>? pageRebuilder = null)
+        Func<PanelConfig, PageViewModel?>? pageRebuilder = null,
+        AppPresetDetector? appPresetDetector = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(page);
@@ -188,6 +194,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         _clockCulture = clockCulture;
         _sensorCatalog = sensorCatalog;
         _imageFilePicker = imageFilePicker;
+        _appPresetDetector = appPresetDetector ?? new AppPresetDetector();
     }
 
     /// <inheritdoc />
@@ -211,6 +218,14 @@ public sealed class EditModeService : INotifyPropertyChanged
     /// here and are therefore not offered for add.
     /// </summary>
     public IReadOnlyList<WidgetPaletteItem> PaletteItems => _palette?.BuiltInWidgets ?? [];
+
+    /// <summary>
+    /// Gets the preset applications offered by the edit-mode Apps row (user-requested preset app
+    /// buttons). The catalog is static data; tapping an entry resolves its executable (or URI
+    /// fallback) and adds a normal image-button configuration through the same add path as the
+    /// widget palette.
+    /// </summary>
+    public IReadOnlyList<AppPreset> AppPresets => AppPresetCatalog.All;
 
     /// <summary>
     /// Gets a value indicating whether the selected widget can be removed or duplicated right now
@@ -977,24 +992,94 @@ public sealed class EditModeService : INotifyPropertyChanged
             return false;
         }
 
-        if (!TryGetPageConfig(out var page))
-        {
-            return false;
-        }
-
         if (!palette.TryCreateDefaultWidget(type, out var config) || config is null)
         {
             _logger.Warning("Edit mode: no default configuration is available for widget type {WidgetType}", type);
             return false;
         }
 
-        ApplyThemeSeeding(config);
-
         var width = Math.Max(DefaultWidgetWidth, item.DefaultWidth > 0 ? item.DefaultWidth : 0);
         var height = Math.Max(DefaultWidgetHeight, item.DefaultHeight > 0 ? item.DefaultHeight : 0);
+        return AddWidgetConfig(config, width, height);
+    }
+
+    /// <summary>
+    /// Adds a preset application button to the edited page (user-requested Apps row). The preset's
+    /// executable candidates are probed in order; when none exists, a URI app falls back to the
+    /// Windows shell, and an app without a working launch target is still created with an empty
+    /// executable so the user can Browse for it (never throws). The resulting image-button
+    /// configuration goes through the exact same placement, id generation,
+    /// eager view-model creation, selection, dirty tracking, single-writer save, and undo path as
+    /// <see cref="AddWidget(string)"/>.
+    /// </summary>
+    /// <param name="preset">The preset application to add; must not be <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> when a button was added.</returns>
+    public bool AddAppPreset(AppPreset preset)
+    {
+        ArgumentNullException.ThrowIfNull(preset);
+
+        if (!_isEditMode)
+        {
+            return false;
+        }
+
+        if (_factory is null)
+        {
+            _logger.Warning("Edit mode: adding a preset app requires the widget factory; the request was ignored");
+            return false;
+        }
+
+        var launch = _appPresetDetector.Resolve(preset);
+        if (!launch.HasExecutable)
+        {
+            _logger.Warning(
+                "Edit mode: no executable or fallback URI was found for preset app {AppPreset}; the button is added without a launch path",
+                preset.Id);
+            _notifier?.Notify(
+                "App not found",
+                $"No executable was found for {preset.DisplayName}. The button was added; use Browse to pick the program.",
+                NotificationSeverity.Info);
+        }
+        else if (launch.UsedFallbackUri)
+        {
+            _logger.Information(
+                "Edit mode: preset app {AppPreset} was not found; using the shell URI {Uri}",
+                preset.Id,
+                launch.FallbackUri);
+        }
+
+        var config = AppPresetWidgetFactory.Create(preset, launch);
+        return AddWidgetConfig(config, AppPresetWidgetFactory.ButtonSize, AppPresetWidgetFactory.ButtonSize);
+    }
+
+    /// <summary>
+    /// The shared add pipeline used by the widget palette and the preset Apps row: theme seeding,
+    /// unique id, clamped placement, eager view-model materialization (with rollback), selection,
+    /// dirty tracking, notification, save-through-single-writer on exit, and an undo point.
+    /// </summary>
+    /// <param name="config">The new configuration with type-specific defaults applied.</param>
+    /// <param name="width">The requested width in DIPs.</param>
+    /// <param name="height">The requested height in DIPs.</param>
+    /// <returns><see langword="true"/> when the widget was added.</returns>
+    private bool AddWidgetConfig(WidgetConfig config, double width, double height)
+    {
+        var factory = _factory;
+        if (factory is null)
+        {
+            _logger.Warning("Edit mode: adding a widget requires the widget factory; the request was ignored");
+            return false;
+        }
+
+        if (!TryGetPageConfig(out var page))
+        {
+            return false;
+        }
+
+        ApplyThemeSeeding(config);
+
         var geometry = PlaceNewWidget(width, height);
 
-        config.Id = GenerateUniqueWidgetId(page, type);
+        config.Id = GenerateUniqueWidgetId(page, config.Type);
         config.X = geometry.X;
         config.Y = geometry.Y;
         config.Width = geometry.Width;
@@ -1024,7 +1109,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         RecordUndoPoint();
         _logger.Information(
             "Edit mode: added a widget. Type={WidgetType} WidgetId={WidgetId} X={X} Y={Y} Width={Width} Height={Height}",
-            type,
+            config.Type,
             config.Id,
             geometry.X,
             geometry.Y,

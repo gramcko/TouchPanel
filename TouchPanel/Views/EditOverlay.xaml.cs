@@ -166,11 +166,26 @@ public partial class EditOverlay : UserControl
         }
     }
 
+    /// <summary>
+    /// Adds the tapped preset app (user-requested Apps row) as an ImageButton. The item's data
+    /// context is the <see cref="TouchPanel.Config.AppPreset"/>; the service resolves the launch
+    /// target, places the button with the same clamp/undo/save path as any added widget, and keeps
+    /// edit mode active so several apps can be added in a row.
+    /// </summary>
+    /// <param name="sender">The app button whose data context is the preset.</param>
+    /// <param name="e">The click event data.</param>
+    private void OnAddAppClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: TouchPanel.Config.AppPreset preset })
+        {
+            Service?.AddAppPreset(preset);
+        }
+    }
+
     /// <summary>Duplicates the selected widget (M2-RF-432) through the edit-mode service.</summary>
     /// <param name="sender">The Duplicate toolbar button.</param>
     /// <param name="e">The click event data.</param>
     private void OnDuplicateWidgetClick(object sender, RoutedEventArgs e) => Service?.DuplicateSelectedWidget();
-
     /// <summary>
     /// Opens the tapped widget's edit menu (UX fix #1): selecting a widget only enables move/resize
     /// and its affordances, so the property editor is opened explicitly here. The button is shown

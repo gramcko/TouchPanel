@@ -822,6 +822,103 @@ public sealed class EditModeServiceTests
     }
 
     [Fact]
+    public void AddAppPreset_AddsA120SquareImageButtonWithTheDetectedActionAndUndoPoint()
+    {
+        var steam = AppPresetCatalog.All.Single(preset => preset.Id == "steam");
+        var detected = AppPresetDetector.ExpandPath(steam.ExecutableCandidates[0].ExecutablePath);
+        var context = CreateAppContext(
+            new AppPresetDetector(path => string.Equals(path, detected, StringComparison.OrdinalIgnoreCase)),
+            Label("existing", 0, 0, 120, 120));
+
+        context.Service.Enter(1000, 500);
+
+        Assert.True(context.Service.AddAppPreset(steam));
+
+        Assert.Equal(2, context.Service.Widgets.Count);
+        var viewModel = Assert.IsType<ImageButtonWidgetViewModel>(context.Service.Widgets[1]);
+        var config = Assert.IsType<ImageButtonWidgetConfig>(context.Config.Pages[0].Widgets[1]);
+
+        Assert.Equal("steam", config.Icon);
+        Assert.Equal("Steam", config.Label);
+        Assert.True(config.ShowLabel);
+        Assert.Equal(120, config.Width);
+        Assert.Equal(120, config.Height);
+        Assert.Equal(120, viewModel.X);
+        Assert.Equal(0, viewModel.Y);
+        Assert.Equal(120, viewModel.Width);
+        Assert.Equal(120, viewModel.Height);
+
+        var action = Assert.IsType<RunCommandActionConfig>(config.Action);
+        Assert.Equal(detected, action.Path);
+        Assert.Empty(action.Arguments);
+        Assert.Null(action.WorkingDirectory);
+
+        Assert.Same(viewModel, context.Service.SelectedWidget);
+        Assert.True(context.Service.IsDirty);
+        Assert.True(context.Service.CanUndo);
+        Assert.Equal(1, context.Service.UndoDepth);
+
+        Assert.True(context.Service.TryUndo());
+        Assert.Single(context.Service.Widgets);
+        Assert.Single(context.Config.Pages[0].Widgets);
+        Assert.True(context.Service.IsEditMode);
+    }
+
+    [Fact]
+    public void AddAppPreset_WithNoExecutableAndNoUri_StillAddsAnEmptyActionButton()
+    {
+        var chrome = AppPresetCatalog.All.Single(preset => preset.Id == "chrome");
+        var context = CreateAppContext(new AppPresetDetector(_ => false, _ => []));
+
+        context.Service.Enter(1000, 500);
+
+        Assert.True(context.Service.AddAppPreset(chrome));
+
+        var config = Assert.IsType<ImageButtonWidgetConfig>(Assert.Single(context.Config.Pages[0].Widgets));
+        var action = Assert.IsType<RunCommandActionConfig>(config.Action);
+        Assert.Equal(string.Empty, action.Path);
+        Assert.Empty(action.Arguments);
+        Assert.Null(action.WorkingDirectory);
+        Assert.Equal("chrome", config.Icon);
+        Assert.Equal("Chrome", config.Label);
+    }
+
+    [Fact]
+    public async Task AddAppPreset_ExitAsync_PersistsTheButtonThroughTheSingleWriter()
+    {
+        var spotify = AppPresetCatalog.All.Single(preset => preset.Id == "spotify");
+        var detected = AppPresetDetector.ExpandPath(spotify.ExecutableCandidates[0].ExecutablePath);
+        var context = CreateAppContext(
+            new AppPresetDetector(path => string.Equals(path, detected, StringComparison.OrdinalIgnoreCase)));
+
+        context.Service.Enter(1000, 500);
+        Assert.True(context.Service.AddAppPreset(spotify));
+
+        var result = await context.Service.ExitAsync();
+
+        Assert.True(result.Attempted);
+        Assert.True(result.Succeeded);
+        Assert.Equal(1, context.Store.SaveCallCount);
+        var saved = Assert.IsType<ImageButtonWidgetConfig>(Assert.Single(context.Store.LastSavedConfig!.Pages[0].Widgets));
+        Assert.Equal("spotify", saved.Icon);
+        Assert.Equal("Spotify", saved.Label);
+        Assert.Equal(120, saved.Width);
+        Assert.Equal(120, saved.Height);
+        Assert.Equal(detected, Assert.IsType<RunCommandActionConfig>(saved.Action).Path);
+    }
+
+    [Fact]
+    public void AddAppPreset_OutsideEditMode_IsNoOp()
+    {
+        var context = CreateAppContext(new AppPresetDetector(_ => true, _ => []));
+
+        Assert.False(context.Service.AddAppPreset(AppPresetCatalog.All[0]));
+        Assert.Empty(context.Service.Widgets);
+        Assert.Empty(context.Config.Pages[0].Widgets);
+        Assert.False(context.Service.IsDirty);
+    }
+
+    [Fact]
     public void AddWidget_UnknownType_IsNotAddable()
     {
         var context = CreateContext();
@@ -904,6 +1001,24 @@ public sealed class EditModeServiceTests
         var store = new RecordingConfigStore();
         var notifier = new RecordingNotifier();
         var service = new EditModeService(config, page, store, notifier: notifier, factory: registry, palette: registry);
+        return new TestContext(config, page, store, notifier, service);
+    }
+
+    private static TestContext CreateAppContext(AppPresetDetector detector, params WidgetConfig[] widgets)
+    {
+        var config = ConfigWith(widgets);
+        var registry = WidgetRegistry.CreateDefault();
+        var page = PageViewModel.CreateForActivePage(config, registry);
+        var store = new RecordingConfigStore();
+        var notifier = new RecordingNotifier();
+        var service = new EditModeService(
+            config,
+            page,
+            store,
+            notifier: notifier,
+            factory: registry,
+            palette: registry,
+            appPresetDetector: detector);
         return new TestContext(config, page, store, notifier, service);
     }
 

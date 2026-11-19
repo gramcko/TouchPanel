@@ -457,8 +457,9 @@
                 Background="#CC1E1E1E"
                 CornerRadius="12"
                 Focusable="False">
-            <Grid Focusable="False">
+            <Grid x:Name="ToolbarGrid" Focusable="False">
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
@@ -558,6 +559,65 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
+
+                <!--
+                    User-requested preset apps: a third touch row under the widget palette. Each
+                    button creates an ImageButton for that app (brand icon + name) through the same
+                    add/undo/persist path as the palette. The row is horizontally pannable and is
+                    laid out in a starred column so the toolbar always stays inside the panel width.
+                -->
+                <Grid Grid.Row="2"
+                      Margin="0,2,0,0"
+                      Focusable="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="AppPresetLabel"
+                               Text="Apps"
+                               Margin="4,0,10,0"
+                               FontSize="13"
+                               FontWeight="SemiBold"
+                               VerticalAlignment="Center"
+                               Opacity="0.8"
+                               Foreground="{DynamicResource PanelForegroundBrush}" />
+                    <ScrollViewer x:Name="AppPresetScroll"
+                                  Grid.Column="1"
+                                  HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled"
+                                  PanningMode="HorizontalOnly"
+                                  Focusable="False"
+                                  IsTabStop="False">
+                        <ItemsControl x:Name="AppPresetItems"
+                                      ItemsSource="{Binding AppPresets}"
+                                      VerticalAlignment="Center"
+                                      Focusable="False"
+                                      IsTabStop="False">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource EditToolbarButtonStyle}"
+                                            Click="OnAddAppClick"
+                                            ToolTip="{Binding DisplayName}">
+                                        <StackPanel Orientation="Horizontal" Focusable="False">
+                                            <controls:WidgetIconPresenter Glyph="{Binding IconGlyph}"
+                                                                          PathData="{Binding IconPathData}"
+                                                                          IconSize="18"
+                                                                          Margin="0,0,8,0"
+                                                                          VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
             </Grid>
         </Border>
 

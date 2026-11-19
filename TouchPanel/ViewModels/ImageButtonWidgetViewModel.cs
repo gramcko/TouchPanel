@@ -50,8 +50,14 @@ public sealed class ImageButtonWidgetViewModel : WidgetViewModelBase
     /// <summary>Gets a value indicating whether the label is shown beneath the icon.</summary>
     public bool ShowLabel => _showLabel;
 
-    /// <summary>Gets the glyph to render: the configured icon, or the neutral default when none is set.</summary>
-    public string DisplayGlyph => IconGlyph ?? DefaultGlyph;
+    /// <summary>Gets the glyph to render: the configured icon glyph, or the neutral default when no icon is set.</summary>
+    public string DisplayGlyph => IconGlyph ?? (IconPathData is null ? DefaultGlyph : string.Empty);
+
+    /// <summary>
+    /// Gets the vector path to render for a configured brand icon, or <see langword="null"/> for a
+    /// glyph/default icon (user-requested brand icons).
+    /// </summary>
+    public string? DisplayPathData => IconPathData;
 
     /// <summary>Gets a value indicating whether the icon (or default glyph) is visible.</summary>
     public bool ShowIcon => HasIcon || !(ShowLabel && HasLabel);
@@ -80,6 +86,7 @@ public sealed class ImageButtonWidgetViewModel : WidgetViewModelBase
         }
 
         OnPropertyChanged(nameof(DisplayGlyph));
+        OnPropertyChanged(nameof(DisplayPathData));
         OnPropertyChanged(nameof(ShowIcon));
         OnPropertyChanged(nameof(ShowLabelText));
         OnPropertyChanged(nameof(HasLabel));
@@ -91,6 +98,7 @@ public sealed class ImageButtonWidgetViewModel : WidgetViewModelBase
         // M3-RF-844: a live icon-pack swap re-resolves the glyph through the active pack; the
         // projected display properties must follow without a rebuild.
         OnPropertyChanged(nameof(DisplayGlyph));
+        OnPropertyChanged(nameof(DisplayPathData));
         OnPropertyChanged(nameof(ShowIcon));
     }
 

@@ -138,7 +138,7 @@ public static class IconPackCatalog
             return true;
         }
 
-        if (IconCatalog.TryGet(iconId, out var option))
+        if (IconCatalog.TryGet(iconId, out var option) && option.HasGlyph)
         {
             glyph = option.Glyph;
             return true;

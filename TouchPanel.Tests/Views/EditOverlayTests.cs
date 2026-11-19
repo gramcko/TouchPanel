@@ -110,6 +110,86 @@ public sealed class EditOverlayTests
     }
 
     [Fact]
+    public async Task Overlay_ShowsTheAppsRowWithTenTouchSizedButtons()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var toolbar = Assert.IsType<Grid>(overlay.FindName("ToolbarGrid"));
+            var label = Assert.IsType<TextBlock>(overlay.FindName("AppPresetLabel"));
+            var apps = Assert.IsType<ItemsControl>(overlay.FindName("AppPresetItems"));
+            var scroll = Assert.IsType<ScrollViewer>(overlay.FindName("AppPresetScroll"));
+
+            var template = apps.ItemTemplate;
+            var content = Assert.IsAssignableFrom<FrameworkElement>(template.LoadContent());
+            var button = Assert.IsType<Button>(content);
+            button.DataContext = apps.Items[0];
+
+            var host = new Grid { Width = 1024, Height = 600 };
+            host.Children.Add(content);
+            host.Measure(new Size(1024, 600));
+            host.Arrange(new Rect(0, 0, 1024, 600));
+            host.UpdateLayout();
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var presenter = FindVisualDescendant<WidgetIconPresenter>(button);
+            var text = FindVisualDescendant<TextBlock>(button, block => block.Text == "Steam");
+
+            return (
+                Rows: toolbar.RowDefinitions.Count,
+                Label: label.Text,
+                Count: apps.Items.Count,
+                Panning: scroll.PanningMode,
+                ButtonHeight: button.ActualHeight,
+                MinHeight: button.MinHeight,
+                Focusable: button.Focusable,
+                HasIcon: presenter is not null,
+                IconPath: presenter?.PathData,
+                HasName: text is not null);
+        });
+
+        Assert.Equal(3, result.Rows);
+        Assert.Equal("Apps", result.Label);
+        Assert.Equal(10, result.Count);
+        Assert.Equal(PanningMode.HorizontalOnly, result.Panning);
+        Assert.True(result.ButtonHeight >= 40, $"App buttons must meet the 40 DIP touch target; was {result.ButtonHeight}.");
+        Assert.True(result.MinHeight >= 40);
+        Assert.False(result.Focusable, "App buttons must not pull keyboard focus.");
+        Assert.True(result.HasIcon, "Each app button must render its brand icon.");
+        Assert.False(string.IsNullOrWhiteSpace(result.IconPath));
+        Assert.True(result.HasName, "Each app button must render its app name.");
+    }
+
+    private static T? FindVisualDescendant<T>(DependencyObject root, Func<T, bool>? predicate = null)
+        where T : DependencyObject
+    {
+        if (root is T match && (predicate is null || predicate(match)))
+        {
+            return match;
+        }
+
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var index = 0; index < count; index++)
+        {
+            if (FindVisualDescendant(VisualTreeHelper.GetChild(root, index), predicate) is { } found)
+            {
+                return found;
+            }
+        }
+
+        return null;
+    }
+
+    [Fact]
     public async Task Overlay_ShowsTheTouchPropertyPanelForASelectedEditableWidget()
     {
         using var sta = new StaThread();

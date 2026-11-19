@@ -4,6 +4,7 @@ using System.Windows.Media;
 using TouchPanel.Config;
 using TouchPanel.Tests.TestSupport;
 using TouchPanel.ViewModels;
+using TouchPanel.Views.Controls;
 
 namespace TouchPanel.Tests.Views;
 
@@ -38,7 +39,7 @@ public sealed class WidgetLabelIconTemplateTests
             });
 
             var textDefault = FindByName<TextBlock>(plain, "BarLabel");
-            var iconDefault = FindByName<TextBlock>(plain, "BarLabelIcon");
+            var iconDefault = FindByName<WidgetIconPresenter>(plain, "BarLabelIcon");
             Assert.NotNull(textDefault);
             Assert.NotNull(iconDefault);
             Assert.Equal("Download", textDefault!.Text);
@@ -58,13 +59,13 @@ public sealed class WidgetLabelIconTemplateTests
             });
 
             var textWithIcon = FindByName<TextBlock>(withIcon, "BarLabel");
-            var iconWithIcon = FindByName<TextBlock>(withIcon, "BarLabelIcon");
+            var iconWithIcon = FindByName<WidgetIconPresenter>(withIcon, "BarLabelIcon");
             Assert.NotNull(textWithIcon);
             Assert.NotNull(iconWithIcon);
             Assert.Equal(Visibility.Collapsed, textWithIcon!.Visibility);
             Assert.Equal(Visibility.Visible, iconWithIcon!.Visibility);
-            Assert.Equal("\uE896", iconWithIcon.Text);
-            Assert.Equal("Segoe MDL2 Assets", iconWithIcon.FontFamily.Source);
+            Assert.Equal("\uE896", iconWithIcon.Glyph);
+            Assert.Null(iconWithIcon.PathData);
             Assert.Equal("Download", iconWithIcon.ToolTip);
         });
     }
@@ -94,7 +95,7 @@ public sealed class WidgetLabelIconTemplateTests
             });
 
             var textDefault = FindByName<TextBlock>(plain, "GaugeLabel");
-            var iconDefault = FindByName<TextBlock>(plain, "LabelIconGlyph");
+            var iconDefault = FindByName<WidgetIconPresenter>(plain, "LabelIconGlyph");
             Assert.NotNull(textDefault);
             Assert.NotNull(iconDefault);
             Assert.Equal(Visibility.Visible, textDefault!.Visibility);
@@ -115,12 +116,13 @@ public sealed class WidgetLabelIconTemplateTests
             });
 
             var textWithIcon = FindByName<TextBlock>(withIcon, "GaugeLabel");
-            var iconWithIcon = FindByName<TextBlock>(withIcon, "LabelIconGlyph");
+            var iconWithIcon = FindByName<WidgetIconPresenter>(withIcon, "LabelIconGlyph");
             Assert.NotNull(textWithIcon);
             Assert.NotNull(iconWithIcon);
             Assert.Equal(Visibility.Collapsed, textWithIcon!.Visibility);
             Assert.Equal(Visibility.Visible, iconWithIcon!.Visibility);
-            Assert.Equal("\uE896", iconWithIcon.Text);
+            Assert.Equal("\uE896", iconWithIcon.Glyph);
+            Assert.Null(iconWithIcon.PathData);
             Assert.Equal("Download", iconWithIcon.ToolTip);
         });
     }

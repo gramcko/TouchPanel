@@ -18,7 +18,9 @@ public sealed class WidgetAppearanceTests
     {
         Assert.InRange(IconCatalog.BuiltIn.Count, 1, 64);
         Assert.All(IconCatalog.BuiltIn, option => Assert.False(string.IsNullOrWhiteSpace(option.Id)));
-        Assert.All(IconCatalog.BuiltIn, option => Assert.False(string.IsNullOrWhiteSpace(option.Glyph)));
+        Assert.All(IconCatalog.BuiltIn, option => Assert.True(
+            option.HasGlyph != option.IsVector,
+            $"Icon '{option.Id}' must be exactly one of glyph or vector."));
 
         var ids = IconCatalog.BuiltIn.Select(option => option.Id).ToArray();
         Assert.Equal(ids.Length, ids.Distinct(StringComparer.Ordinal).Count());

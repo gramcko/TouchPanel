@@ -56,6 +56,9 @@ public sealed class InlineIconPickerTests
         Assert.Equal(string.Empty, result.IconIds[0]);
         Assert.All(IconCatalog.BuiltIn, option => Assert.Contains(option.Id, result.IconIds));
         Assert.All(IconCatalog.BuiltIn, option => Assert.Contains(option.Id, result.LabelIds));
+        Assert.Contains("steam", result.IconIds);
+        Assert.Contains("vscode", result.IconIds);
+        Assert.Contains("github", result.LabelIds);
     }
 
     [Fact]
