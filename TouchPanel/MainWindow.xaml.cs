@@ -28,7 +28,14 @@ namespace TouchPanel;
 /// <para><b>Focus preservation (RF-018).</b> The window is declared with
 /// <c>ShowActivated=false</c> and receives <c>WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW</c> when its
 /// HWND is created; placement, show/hide, and topmost changes all use the no-activate Win32
-/// paths. Nothing in this class calls <c>Activate()</c> or <c>SetForegroundWindow</c>.</para>
+/// paths. Normal mode never calls <c>Activate()</c> or <c>SetForegroundWindow</c>.</para>
+/// <para><b>Edit-mode activation (D-6).</b> Typing in the edit overlay requires keyboard focus, so
+/// <see cref="EnterEditMode"/> is the one deliberate activation path: it remembers the current
+/// foreground window, clears <c>WS_EX_NOACTIVATE</c> (keeping <c>WS_EX_TOOLWINDOW</c>), re-asserts
+/// the frame, activates, and moves keyboard focus into the panel. <see cref="LeaveEditMode"/>
+/// re-applies <c>WS_EX_NOACTIVATE</c> and hands the foreground back to the remembered window only
+/// when the panel still owns it, so ending a session never steals focus from what the user switched
+/// to.</para>
 /// <para><b>Physical pixels (DD-5).</b> Bounds come from <see cref="MonitorDescriptor.Bounds"/>
 /// (<c>rcMonitor</c>) and are applied with <c>SetWindowPos</c>; WPF's DIP conversion is never
 /// involved, which avoids the PerMonitorV2 ambiguity tracked by R-4.</para>
@@ -43,6 +50,8 @@ public partial class MainWindow : Window, IPanelWindow
     private HwndSourceHook? _windowHook;
     private EditModeService? _editModeService;
     private PageTransitionController? _pageTransition;
+    private nint _previousForegroundWindow;
+    private bool _isInteractiveForEditing;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MainWindow"/> class and subscribes to
@@ -73,6 +82,27 @@ public partial class MainWindow : Window, IPanelWindow
 
     /// <summary>Gets the monitor whose full bounds the panel targets, or <see langword="null"/> before placement.</summary>
     public MonitorDescriptor? TargetMonitor => _targetMonitor;
+
+    /// <summary>
+    /// Gets or sets the foreground-window reader used by the edit-mode interaction path. The default
+    /// is the real <c>GetForegroundWindow</c>; the window-mechanics tests replace it so no desktop
+    /// state is touched.
+    /// </summary>
+    internal Func<nint> ForegroundWindowSource { get; set; } = WindowStyles.GetForegroundWindow;
+
+    /// <summary>
+    /// Gets or sets the foreground request used by edit-mode entry (activation fallback) and exit
+    /// (foreground restore). The default is the real <c>SetForegroundWindow</c>; tests replace it to
+    /// observe the policy without changing the desktop.
+    /// </summary>
+    internal Action<nint> ForegroundWindowActivator { get; set; } = handle => WindowStyles.SetForegroundWindow(handle);
+
+    /// <summary>
+    /// Gets a value indicating whether the panel is currently in its deliberate interactive
+    /// edit-mode state: <c>WS_EX_NOACTIVATE</c> cleared, keyboard focus allowed. Exposed for the
+    /// window-mechanics tests; normal mode is always <see langword="false"/>.
+    /// </summary>
+    internal bool IsInteractiveForEditing => _isInteractiveForEditing;
 
     /// <summary>
     /// Gets or sets the normal-mode page-change animation (user-requested addition, additive under
@@ -268,10 +298,14 @@ public partial class MainWindow : Window, IPanelWindow
 
     /// <summary>
     /// Hides the panel through WPF's visibility bookkeeping and the native <c>SW_HIDE</c>
-    /// (RF-006/RF-024, DD-5). Never activates anything.
+    /// (RF-006/RF-024, DD-5). Never activates anything. A hidden window cannot take focus, so any
+    /// interactive edit-mode style is released first (idempotent); the composition root ends the
+    /// edit session itself and restores the no-activate behavior for every hide path.
     /// </summary>
     public void HidePanel()
     {
+        LeaveEditMode();
+
         if (IsVisible)
         {
             Hide();
@@ -358,22 +392,154 @@ public partial class MainWindow : Window, IPanelWindow
 
     /// <summary>
     /// Applies the deliberate activation allowed when entering edit mode (D-6/RF-026). This is the
-    /// only code path in the application that may take focus, and it runs only for an explicit
-    /// user action (tray toggle); normal mode never calls <c>Activate</c> (RF-018). Activation is
-    /// best-effort: the OS can refuse a foreground change, in which case touch editing still works.
+    /// only code path in the application that may take focus: it clears <c>WS_EX_NOACTIVATE</c>,
+    /// re-asserts the frame, activates the panel (with a best-effort <c>SetForegroundWindow</c>
+    /// fallback), and makes sure keyboard focus lives inside the panel so Esc and the local shortcuts
+    /// work. Normal mode never calls <c>Activate</c> (RF-018). Activation is best-effort: the OS can
+    /// refuse a foreground change, in which case touch editing still works.
     /// </summary>
     public void EnterEditMode()
     {
         EditModeActivationRequestCount++;
+        BeginInteractiveEditing();
+    }
+
+    /// <summary>
+    /// Switches the window to its interactive edit-mode style: remembers the current foreground
+    /// window (for the exit restore), clears <c>WS_EX_NOACTIVATE</c> while keeping
+    /// <c>WS_EX_TOOLWINDOW</c>, re-asserts the frame so the change takes effect immediately, then
+    /// activates. Called by <see cref="EnterEditMode"/>, which keeps the
+    /// <see cref="EditModeActivationRequestCount"/> seam observable.
+    /// </summary>
+    private void BeginInteractiveEditing()
+    {
+        var handle = EnsureHandle();
+        if (handle == 0)
+        {
+            return;
+        }
+
+        if (!_isInteractiveForEditing)
+        {
+            var foreground = ForegroundWindowSource();
+            _previousForegroundWindow = foreground != handle ? foreground : 0;
+        }
+
+        WindowStyles.RemoveExtendedStyles(handle, WindowStyles.WsExNoActivate);
+        WindowStyles.ReassertWindowFrame(handle);
+        _isInteractiveForEditing = true;
 
         try
         {
-            Activate();
+            if (!IsActive)
+            {
+                Activate();
+            }
+
+            // Activate() can be refused for a window that was shown without activation; this is the
+            // one deliberate foreground request of the application (D-6) and stays best-effort.
+            if (!IsActive && IsVisible)
+            {
+                ForegroundWindowActivator(handle);
+            }
         }
         catch (Exception)
         {
             // Never let a refused foreground change break editing.
         }
+
+        EnsureKeyboardFocusInsidePanel();
+    }
+
+    /// <summary>
+    /// Ends the interactive edit-mode state (idempotent): re-adds <c>WS_EX_NOACTIVATE</c>, re-asserts
+    /// the frame, and restores the saved foreground window only when the panel is still the
+    /// foreground window, so ending a session never steals focus from whatever the user switched to.
+    /// The saved handle is cleared so a second call is a safe no-op.
+    /// </summary>
+    public void LeaveEditMode()
+    {
+        if (!_isInteractiveForEditing && _previousForegroundWindow == 0)
+        {
+            return;
+        }
+
+        var handle = _handle;
+        if (handle != 0)
+        {
+            WindowStyles.AddExtendedStyles(handle, WindowStyles.WsExNoActivate);
+            WindowStyles.ReassertWindowFrame(handle);
+        }
+
+        _isInteractiveForEditing = false;
+
+        var previous = _previousForegroundWindow;
+        _previousForegroundWindow = 0;
+        if (previous == 0 || handle == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            if (ForegroundWindowSource() == handle)
+            {
+                ForegroundWindowActivator(previous);
+            }
+        }
+        catch (Exception)
+        {
+            // Restoring the previous window is best-effort and must never break the exit path.
+        }
+    }
+
+    /// <summary>
+    /// Makes sure keyboard focus lives inside the panel after entering edit mode. If nothing is
+    /// focused, or the focus is still in another window, the panel window itself is focused so Esc
+    /// and the local shortcuts work; focusing a tapped TextBox later follows normal WPF behavior.
+    /// Never runs outside the interactive edit-mode path.
+    /// </summary>
+    private void EnsureKeyboardFocusInsidePanel()
+    {
+        if (IsKeyboardFocusInsidePanel())
+        {
+            return;
+        }
+
+        try
+        {
+            if (!Focus())
+            {
+                Keyboard.Focus(this);
+            }
+        }
+        catch (Exception)
+        {
+            // A refused focus change only means the user must tap a field first; editing still works.
+        }
+    }
+
+    private bool IsKeyboardFocusInsidePanel()
+    {
+        if (Keyboard.FocusedElement is not DependencyObject focused)
+        {
+            return false;
+        }
+
+        DependencyObject? node = focused;
+        while (node is not null)
+        {
+            if (ReferenceEquals(node, this))
+            {
+                return true;
+            }
+
+            node = node is Visual
+                ? VisualTreeHelper.GetParent(node)
+                : LogicalTreeHelper.GetParent(node);
+        }
+
+        return false;
     }
 
     /// <summary>

@@ -8,9 +8,12 @@ namespace TouchPanel.Interop;
 /// business logic: the caller (<c>MainWindow</c>) owns the policy, this class only marshals.
 /// </summary>
 /// <remarks>
-/// <para><b>No activation.</b> Every operation here is paired with the no-activate flag or
-/// command (<see cref="SwpNoActivate"/>, <see cref="SwShowNoActivate"/>), and the application
-/// never calls <c>SetForegroundWindow</c> in normal mode (RF-018).</para>
+/// <para><b>No activation in normal mode.</b> Every window operation here is paired with the
+/// no-activate flag or command (<see cref="SwpNoActivate"/>, <see cref="SwShowNoActivate"/>), and
+/// normal mode never calls <c>SetForegroundWindow</c> (RF-018). The single deliberate exception is
+/// edit-mode entry, which clears <see cref="WsExNoActivate"/> and may activate the panel (D-6);
+/// <see cref="SetForegroundWindow"/> exists only for that path and for restoring the previous
+/// window when the edit session ends.</para>
 /// <para><b>Physical pixels.</b> Coordinates passed to <see cref="SetWindowPos"/> are physical
 /// screen pixels in virtual-desktop coordinates, matching <c>GetMonitorInfo</c> bounds; no DIP
 /// conversion happens here (DD-5, R-4).</para>
@@ -39,6 +42,9 @@ internal static class WindowStyles
 
     /// <summary><c>SWP_NOACTIVATE</c>: never activate the window (RF-018).</summary>
     internal const uint SwpNoActivate = 0x0010;
+
+    /// <summary><c>SWP_FRAMECHANGED</c>: re-evaluate the non-client frame after an ex-style change.</summary>
+    internal const uint SwpFrameChanged = 0x0020;
 
     /// <summary><c>HWND_TOPMOST</c>: place the window above all non-topmost windows (RF-020).</summary>
     internal static readonly nint HwndTopmost = new(-1);
@@ -93,6 +99,38 @@ internal static class WindowStyles
     }
 
     /// <summary>
+    /// Clears extended style bits from a window (<c>&amp; ~styles</c> semantics) and leaves every
+    /// other bit untouched. Edit-mode entry uses it to remove <see cref="WsExNoActivate"/> while
+    /// keeping <see cref="WsExToolWindow"/> (D-6); normal mode re-adds the bit when the session ends.
+    /// </summary>
+    /// <param name="window">The target window handle.</param>
+    /// <param name="styles">The extended style bits to clear.</param>
+    /// <returns>The new extended style value after the update.</returns>
+    internal static nint RemoveExtendedStyles(nint window, int styles)
+    {
+        var current = GetWindowLongPtr(window, GwlExStyle);
+        return SetWindowLongPtr(window, GwlExStyle, current & ~styles);
+    }
+
+    /// <summary>
+    /// Re-asserts the window frame after an extended-style change with <c>SetWindowPos</c> and
+    /// <c>SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE</c>, so the
+    /// new activation style takes effect immediately without moving, resizing, reordering, or
+    /// activating the window.
+    /// </summary>
+    /// <param name="window">The target window handle.</param>
+    /// <returns><see langword="true"/> when the frame change was applied.</returns>
+    internal static bool ReassertWindowFrame(nint window) =>
+        SetWindowPos(
+            window,
+            0,
+            0,
+            0,
+            0,
+            0,
+            SwpFrameChanged | SwpNoMove | SwpNoSize | SwpNoZOrder | SwpNoActivate);
+
+    /// <summary>
     /// Moves, resizes, or reorders a window. Callers pass <see cref="SwpNoActivate"/> on every
     /// panel operation so the call never activates the window (DD-5/RF-018).
     /// </summary>
@@ -125,6 +163,23 @@ internal static class WindowStyles
     /// <returns>The monitor DPI (for example 96, 120, or 144), or 0 when it cannot be read.</returns>
     internal static uint GetDpiForWindow(nint window) => GetDpiForWindowNative(window);
 
+    /// <summary>
+    /// Reads the current foreground window (<c>GetForegroundWindow</c>). Edit-mode entry uses it to
+    /// remember which window the user was in so the session can hand focus back on exit (D-6). The
+    /// normal (non-editing) paths never consult it.
+    /// </summary>
+    /// <returns>The foreground window handle, or 0 when no window has the foreground.</returns>
+    internal static nint GetForegroundWindow() => GetForegroundWindowNative();
+
+    /// <summary>
+    /// Requests a foreground-window change (<c>SetForegroundWindow</c>). Used only by the edit-mode
+    /// interaction path (activation fallback and foreground restore, D-6); normal mode never calls
+    /// it (RF-018). The OS may refuse the request; callers treat it as best-effort.
+    /// </summary>
+    /// <param name="window">The window to bring to the foreground.</param>
+    /// <returns><see langword="true"/> when the OS granted the request.</returns>
+    internal static bool SetForegroundWindow(nint window) => SetForegroundWindowNative(window);
+
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
     private static extern nint GetWindowLongPtrW(nint window, int index);
 
@@ -147,4 +202,11 @@ internal static class WindowStyles
 
     [DllImport("user32.dll", EntryPoint = "GetDpiForWindow", SetLastError = true)]
     private static extern uint GetDpiForWindowNative(nint window);
+
+    [DllImport("user32.dll", EntryPoint = "GetForegroundWindow", SetLastError = true)]
+    private static extern nint GetForegroundWindowNative();
+
+    [DllImport("user32.dll", EntryPoint = "SetForegroundWindow", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindowNative(nint window);
 }

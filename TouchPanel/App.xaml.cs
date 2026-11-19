@@ -267,6 +267,7 @@ public partial class App : Application, IPanelConfigApplyTarget
                 if (service is not null && (service.IsEditMode || service.IsDirty))
                 {
                     var result = await service.ExitAsync(cancellationToken);
+                    (MainWindow as MainWindow)?.LeaveEditMode();
                     if (result is { Attempted: true, Succeeded: false } && !result.Canceled)
                     {
                         await TryWriteEmergencyRecoveryCopyAsync(cancellationToken);
@@ -662,7 +663,15 @@ public partial class App : Application, IPanelConfigApplyTarget
     /// DPI change). Fire-and-forget is safe: <see cref="PanelDisplayChangeHandler.HandleAsync"/>
     /// isolates every failure.
     /// </summary>
-    private void OnDisplayChanged(object? sender, EventArgs e)
+    private void OnDisplayChanged(object? sender, EventArgs e) => _ = HandleDisplayChangeAsync();
+
+    /// <summary>
+    /// Runs one display-change decision and keeps the edit session consistent with the panel's
+    /// visibility: a display change can hide the panel (target monitor unavailable), and an edit
+    /// session cannot outlive it — ending it restores the no-activate style and avoids a later
+    /// non-activating show that would not take focus.
+    /// </summary>
+    private async Task HandleDisplayChangeAsync()
     {
         var handler = _displayChangeHandler;
         if (handler is null)
@@ -670,7 +679,22 @@ public partial class App : Application, IPanelConfigApplyTarget
             return;
         }
 
-        _ = handler.HandleAsync();
+        await handler.HandleAsync().ConfigureAwait(true);
+
+        try
+        {
+            if (MainWindow is MainWindow window
+                && !window.IsVisible
+                && _editModeService?.IsEditMode == true)
+            {
+                await SetEditModeAsync(enter: false).ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            // A display change must never take the application down (RF-012/RNF-013).
+            _logger.Warning(ex, "Edit mode: ending the session after a panel hide failed");
+        }
     }
 
     /// <summary>
@@ -1499,6 +1523,13 @@ public partial class App : Application, IPanelConfigApplyTarget
 
         try
         {
+            // Hot reload/import replaces the edit-mode service with a fresh one that starts in normal
+            // mode, so an interactive style from the previous session must not outlive it.
+            if (_editModeService?.IsEditMode == true)
+            {
+                window.LeaveEditMode();
+            }
+
             _editModeService = new EditModeService(config, page, store, _logger, Notifier, _widgetRegistry, _widgetRegistry, new ExecutableFilePicker(), _clockCulture, new SensorCatalog(_monitoringService), new ImageFilePicker(), config => AttachActivePage(window, config));
             viewModel.AttachEditModeService(_editModeService);
             window.AttachEditModeService(_editModeService);
@@ -1649,6 +1680,14 @@ public partial class App : Application, IPanelConfigApplyTarget
         // The flag flips synchronously, so the page rebuild cannot see an active edit session and the
         // coordinator's edit-mode switch guard is released for this deliberate, already-saved change.
         await service.ExitAsync(cancellationToken).ConfigureAwait(true);
+
+        // The session is suspended, so the panel must stop taking focus for the page rebuild; the
+        // resume path re-enters through SetEditModeAsync and restores interactivity (D-6).
+        if (MainWindow is MainWindow window)
+        {
+            window.LeaveEditMode();
+        }
+
         UpdateEditModeMenuItem();
 
         // User-requested page transitions are a normal-mode affordance only: the edit-mode pages
@@ -2115,11 +2154,19 @@ public partial class App : Application, IPanelConfigApplyTarget
 
     /// <summary>
     /// Hides the panel through the non-activating hide path and updates the view-model state
-    /// (RF-006/RF-024).
+    /// (RF-006/RF-024). Hiding ends an active edit session through the normal save/exit path, so the
+    /// panel can never keep the interactive style while hidden and the no-activate behavior returns.
     /// </summary>
     /// <param name="source">Short source tag for logs ("tray").</param>
     private void RequestPanelHide(string source)
     {
+        if (_editModeService?.IsEditMode == true)
+        {
+            // Fire-and-forget is safe: SetEditModeAsync isolates failures and LeaveEditMode is
+            // idempotent (HidePanel also releases the interactive style immediately).
+            _ = SetEditModeAsync(enter: false);
+        }
+
         _mainWindowViewModel?.RequestHide();
         (MainWindow as MainWindow)?.HidePanel();
         _logger.Information("Panel: hidden. Source={Source}", source);
@@ -2141,10 +2188,11 @@ public partial class App : Application, IPanelConfigApplyTarget
     /// <summary>
     /// Toggles edit mode (RF-026/DD-7). Entering ensures the panel is visible (applying the RF-017
     /// monitor policy), records the DIP page bounds used for clamping, and applies the deliberate
-    /// activation allowed by D-6. Exiting flips the flag synchronously, saves the layout only when
-    /// dirty through the single-writer store (RF-080), and restores the non-activating show
-    /// behavior. The tray check state is kept in sync on both paths; failures are isolated
-    /// (RF-013).
+    /// activation allowed by D-6 through <see cref="MainWindow.EnterEditMode"/>. Exiting flips the
+    /// flag synchronously, saves the layout only when dirty through the single-writer store
+    /// (RF-080), and always restores the non-activating window behavior through
+    /// <see cref="MainWindow.LeaveEditMode"/> — including when there was nothing to save. The tray
+    /// check state is kept in sync on both paths; failures are isolated (RF-013).
     /// </summary>
     /// <param name="enter">Whether edit mode should be entered or exited.</param>
     private async Task SetEditModeAsync(bool enter)
@@ -2190,10 +2238,14 @@ public partial class App : Application, IPanelConfigApplyTarget
             {
                 if (!service.IsEditMode && !service.IsDirty)
                 {
+                    // Nothing to save, but the window may still hold the interactive style after a
+                    // partial flow; leaving is idempotent and makes the no-activate state explicit.
+                    window.LeaveEditMode();
                     return;
                 }
 
                 var result = await service.ExitAsync();
+                window.LeaveEditMode();
                 _logger.Information(
                     "Edit mode: exited. SaveAttempted={SaveAttempted} SaveSucceeded={SaveSucceeded} Canceled={Canceled}",
                     result.Attempted,
@@ -2233,6 +2285,13 @@ public partial class App : Application, IPanelConfigApplyTarget
     /// </summary>
     private void OnCloseToTrayRequested(object? sender, EventArgs e)
     {
+        if (_editModeService?.IsEditMode == true)
+        {
+            // Closing to the tray ends the edit session (save when dirty) so the no-activate style
+            // is restored and the panel comes back in normal mode, never in a focus-taking state.
+            _ = SetEditModeAsync(enter: false);
+        }
+
         _mainWindowViewModel?.RequestHide();
         _logger.Information("Panel: close request handled; the panel was hidden to the tray and the application keeps running");
 

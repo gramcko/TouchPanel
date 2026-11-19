@@ -595,6 +595,249 @@ public sealed class MainWindowTests
         Assert.False(result.Focusable, "The Exit Edit Mode button must not pull keyboard focus.");
     }
 
+    [Fact]
+    public async Task EnterEditMode_ClearsNoActivateAndLeaveEditModeRestoresItIdempotently()
+    {
+        // D-6: typing in the edit overlay needs keyboard focus, so entry is the one deliberate
+        // activation path: the no-activate bit is cleared and the window becomes interactive.
+        // Leaving restores the bit, and calling leave twice must be safe.
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var window = new MainWindow();
+            try
+            {
+                var handle = window.EnsureHandle();
+                var initial = ReadExStyle(handle);
+                var beforeInteractive = window.IsInteractiveForEditing;
+
+                window.EnterEditMode();
+                var interactiveStyle = ReadExStyle(handle);
+                var duringInteractive = window.IsInteractiveForEditing;
+
+                window.LeaveEditMode();
+                var restoredStyle = ReadExStyle(handle);
+                var afterInteractive = window.IsInteractiveForEditing;
+
+                window.LeaveEditMode();
+                var secondLeaveStyle = ReadExStyle(handle);
+
+                return (Initial: initial, InteractiveStyle: interactiveStyle, RestoredStyle: restoredStyle, SecondLeaveStyle: secondLeaveStyle, Before: beforeInteractive, During: duringInteractive, After: afterInteractive);
+            }
+            finally
+            {
+                window.AllowExit = true;
+                window.Close();
+            }
+        });
+
+        Assert.True((result.Initial & WindowStyles.WsExNoActivate) != 0);
+        Assert.False(result.Before);
+
+        // Entry clears only WS_EX_NOACTIVATE; WS_EX_TOOLWINDOW must stay (RF-019).
+        Assert.True((result.InteractiveStyle & WindowStyles.WsExNoActivate) == 0);
+        Assert.True((result.InteractiveStyle & WindowStyles.WsExToolWindow) != 0);
+        Assert.True(result.During);
+
+        // Exit re-applies the bit and keeps every other bit; the second call is a no-op.
+        Assert.True((result.RestoredStyle & WindowStyles.WsExNoActivate) != 0);
+        Assert.True((result.RestoredStyle & WindowStyles.WsExToolWindow) != 0);
+        Assert.False(result.After);
+        Assert.Equal(result.RestoredStyle, result.SecondLeaveStyle);
+    }
+
+    [Fact]
+    public async Task RemoveExtendedStyles_ClearsOnlyTheRequestedBits()
+    {
+        // D-6: removing WS_EX_NOACTIVATE must preserve WS_EX_TOOLWINDOW (and any other bit).
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var window = new MainWindow();
+            try
+            {
+                var handle = window.EnsureHandle();
+                var before = ReadExStyle(handle);
+
+                WindowStyles.RemoveExtendedStyles(handle, WindowStyles.WsExNoActivate);
+                var afterNoActivate = ReadExStyle(handle);
+
+                WindowStyles.AddExtendedStyles(handle, WindowStyles.WsExNoActivate);
+                WindowStyles.RemoveExtendedStyles(handle, WindowStyles.WsExToolWindow);
+                var afterToolWindow = ReadExStyle(handle);
+
+                return (Before: before, AfterNoActivate: afterNoActivate, AfterToolWindow: afterToolWindow);
+            }
+            finally
+            {
+                window.AllowExit = true;
+                window.Close();
+            }
+        });
+
+        Assert.Equal(result.Before & ~(long)WindowStyles.WsExNoActivate, result.AfterNoActivate);
+        Assert.True((result.AfterNoActivate & WindowStyles.WsExToolWindow) != 0);
+
+        // The inverse clear leaves the no-activate bit (which was re-added above) untouched.
+        Assert.Equal(result.Before & ~(long)WindowStyles.WsExToolWindow, result.AfterToolWindow);
+        Assert.True((result.AfterToolWindow & WindowStyles.WsExNoActivate) != 0);
+    }
+
+    [Fact]
+    public async Task NormalModeWindowOperations_DoNotMutateTheExtendedStyles()
+    {
+        // RF-018: placement, topmost, page rendering, and the no-activate show path never touch the
+        // activation style. Only the explicit edit-mode entry/exit pair may change it.
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var window = new MainWindow();
+            try
+            {
+                var handle = window.EnsureHandle();
+                var monitor = new MonitorDescriptor
+                {
+                    FriendlyName = "Touchscreen",
+                    Bounds = new PixelRect(0, 0, 64, 48),
+                    WorkArea = new PixelRect(0, 0, 64, 48),
+                };
+
+                var initial = ReadExStyle(handle);
+
+                window.PlaceOnMonitor(monitor);
+                var afterPlacement = ReadExStyle(handle);
+
+                window.SetTopmost(true);
+                var afterTopmost = ReadExStyle(handle);
+
+                window.ShowPage(null, PageTransitionDirection.Forward, animate: false);
+                var afterPage = ReadExStyle(handle);
+
+                window.ShowWithoutActivation();
+                var afterShow = ReadExStyle(handle);
+
+                window.HidePanel();
+                var afterHide = ReadExStyle(handle);
+
+                return (Initial: initial, AfterPlacement: afterPlacement, AfterTopmost: afterTopmost, AfterPage: afterPage, AfterShow: afterShow, AfterHide: afterHide, Interactive: window.IsInteractiveForEditing);
+            }
+            finally
+            {
+                window.AllowExit = true;
+                window.Close();
+            }
+        });
+
+        Assert.Equal(result.Initial, result.AfterPlacement);
+
+        // SetTopmost legitimately sets WS_EX_TOPMOST; the activation style must not change.
+        Assert.True((result.AfterTopmost & WindowStyles.WsExNoActivate) != 0);
+        Assert.True((result.AfterTopmost & WindowStyles.WsExToolWindow) != 0);
+
+        Assert.Equal(result.AfterTopmost, result.AfterPage);
+        Assert.Equal(result.AfterPage, result.AfterShow);
+        Assert.Equal(result.AfterPage, result.AfterHide);
+        Assert.True((result.Initial & WindowStyles.WsExNoActivate) != 0);
+        Assert.False(result.Interactive);
+    }
+
+    [Fact]
+    public async Task LeaveEditMode_RestoresThePreviousForegroundOnlyWhenThePanelIsForeground()
+    {
+        // D-6: ending an edit session hands focus back to the window the user was in, but never
+        // steals it when the user already switched somewhere else.
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var window = new MainWindow();
+            try
+            {
+                var handle = window.EnsureHandle();
+                nint previousWindow = 0x1234;
+                var foreground = previousWindow;
+                var activations = new List<nint>();
+
+                window.ForegroundWindowSource = () => foreground;
+                window.ForegroundWindowActivator = activations.Add;
+
+                window.EnterEditMode();
+
+                // The user switched to another app while editing: no restore may happen.
+                foreground = 0x5678;
+                window.LeaveEditMode();
+                var afterForeignForeground = activations.Count;
+
+                // Re-enter and exit while the panel still owns the foreground: restore the saved one.
+                foreground = previousWindow;
+                window.EnterEditMode();
+                foreground = handle;
+                window.LeaveEditMode();
+
+                return (Activations: activations.ToArray(), AfterForeignForeground: afterForeignForeground, Interactive: window.IsInteractiveForEditing);
+            }
+            finally
+            {
+                window.AllowExit = true;
+                window.Close();
+            }
+        });
+
+        Assert.Equal(0, result.AfterForeignForeground);
+        Assert.Single(result.Activations);
+        Assert.Equal((nint)0x1234, result.Activations[0]);
+        Assert.False(result.Interactive);
+    }
+
+    [Fact]
+    public async Task LeaveEditMode_WithoutAnActiveSession_NeverRequestsForeground()
+    {
+        // RF-018: normal mode never activates; leave is a no-op when nothing was entered.
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var window = new MainWindow();
+            try
+            {
+                var handle = window.EnsureHandle();
+                var activations = new List<nint>();
+                window.ForegroundWindowSource = () => 0x1234;
+                window.ForegroundWindowActivator = activations.Add;
+
+                var styleBefore = ReadExStyle(handle);
+                window.LeaveEditMode();
+                var styleAfter = ReadExStyle(handle);
+
+                // Tapping/placing/showing in normal mode must not request the foreground either.
+                window.SetTopmost(false);
+                window.PlaceOnMonitor(new MonitorDescriptor
+                {
+                    FriendlyName = "Touchscreen",
+                    Bounds = new PixelRect(0, 0, 32, 32),
+                    WorkArea = new PixelRect(0, 0, 32, 32),
+                });
+
+                return (Activations: activations.Count, StyleBefore: styleBefore, StyleAfter: styleAfter, StyleAfterNormalOps: ReadExStyle(handle));
+            }
+            finally
+            {
+                window.AllowExit = true;
+                window.Close();
+            }
+        });
+
+        Assert.Equal(0, result.Activations);
+        Assert.Equal(result.StyleBefore, result.StyleAfter);
+        Assert.Equal(result.StyleBefore, result.StyleAfterNormalOps);
+    }
+
+    private static long ReadExStyle(nint handle) =>
+        (long)WindowStyles.GetWindowLongPtr(handle, WindowStyles.GwlExStyle);
+
     private static (EditModeService Service, WidgetViewModelBase Widget) AttachEditMode(
         MainWindow window,
         double x = 100,
