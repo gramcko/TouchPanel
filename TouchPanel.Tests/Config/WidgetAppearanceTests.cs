@@ -16,7 +16,7 @@ public sealed class WidgetAppearanceTests
     [Fact]
     public void IconCatalog_IsBoundedAndHasUniqueStableIds()
     {
-        Assert.InRange(IconCatalog.BuiltIn.Count, 1, 64);
+        Assert.InRange(IconCatalog.BuiltIn.Count, 1, 96);
         Assert.All(IconCatalog.BuiltIn, option => Assert.False(string.IsNullOrWhiteSpace(option.Id)));
         Assert.All(IconCatalog.BuiltIn, option => Assert.True(
             option.HasGlyph != option.IsVector,

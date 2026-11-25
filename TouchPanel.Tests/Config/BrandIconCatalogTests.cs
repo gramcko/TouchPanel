@@ -7,9 +7,9 @@ using TouchPanel.Config.Validation;
 namespace TouchPanel.Tests.Config;
 
 /// <summary>
-/// User-requested brand icons: the ten simple-icons (CC0 1.0) vector ids are part of the 55-entry
-/// built-in catalog, resolve identically in every icon pack, persist unchanged through JSON and
-/// validation, and keep the existing glyph entries (including download/upload) working.
+/// User-requested brand icons: the ten simple-icons (CC0 1.0) vector ids are part of the built-in
+/// catalog, resolve identically in every icon pack, persist unchanged through JSON and validation,
+/// and keep the existing glyph entries (including download/upload) working.
 /// </summary>
 public sealed class BrandIconCatalogTests
 {
@@ -30,7 +30,7 @@ public sealed class BrandIconCatalogTests
     [Fact]
     public void Catalog_ContainsExactlyTheTenBrandVectorsAndTheOriginalGlyphs()
     {
-        Assert.Equal(55, IconCatalog.BuiltIn.Count);
+        Assert.Equal(93, IconCatalog.BuiltIn.Count);
 
         foreach (var id in BrandIds)
         {

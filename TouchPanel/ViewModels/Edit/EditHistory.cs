@@ -101,6 +101,28 @@ public sealed class EditHistory
     }
 
     /// <summary>
+    /// Moves the current snapshot forward in place without creating an undo step (user-requested live
+    /// font-size preview): used for the previews after a group's first recorded change so undo still
+    /// restores the state before the whole group while redo and a following group see the latest value.
+    /// The undo and redo stacks are untouched.
+    /// </summary>
+    /// <param name="nextSnapshot">The latest applied state; must not be <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> when the current snapshot changed.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="nextSnapshot"/> is <see langword="null"/>.</exception>
+    public bool ReplaceCurrent(string nextSnapshot)
+    {
+        ArgumentNullException.ThrowIfNull(nextSnapshot);
+
+        if (string.Equals(_current, nextSnapshot, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _current = nextSnapshot;
+        return true;
+    }
+
+    /// <summary>
     /// Gets the state an undo would restore without changing the stacks.
     /// </summary>
     /// <param name="snapshot">The previous state when available; otherwise an empty string.</param>

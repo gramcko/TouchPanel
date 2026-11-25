@@ -9,13 +9,15 @@
              Stylus.IsFlicksEnabled="False">
 
     <!--
-        Reusable widget icon presenter (user-requested brand icons). It draws the existing Segoe MDL2
-        glyph when the resolved id is a font icon, or a monochrome Path (uniform stretch, filled with
-        the widget foreground) when the id is one of the simple-icons brand paths. Both live in the
-        same square glyph box, so replacing a TextBlock with this control preserves the surrounding
-        layout. The vector is intentionally drawn at ~82% of the glyph box: a 24x24 solid path reads
-        optically heavier than a font glyph at the same nominal size, so the inset keeps the weights
-        matched; the Path is vertically centred in the box. No code-behind logic beyond DP projection.
+        Reusable widget icon presenter (user-requested brand and line-art icons). It draws the
+        existing Segoe MDL2 glyph when the resolved id is a font icon, a filled monochrome Path
+        (uniform stretch, filled with the widget foreground) when the id is one of the simple-icons
+        brand paths, or a stroked line-art Path when the id declares a stroke style. All
+        representations live in the same square glyph box, so replacing a TextBlock with this control
+        preserves the surrounding layout. Filled vectors are drawn at ~82% of the glyph box: a 24x24
+        solid path reads optically heavier than a font glyph at the same nominal size, so the inset
+        keeps the weights matched. Stroke icons use the full box so the pen width lands at the
+        requested fraction of the icon size. No code-behind logic beyond DP projection.
     -->
     <Grid x:Name="IconBox"
           HorizontalAlignment="Center"
@@ -32,6 +34,16 @@
         <Path x:Name="VectorPath"
               Stretch="Uniform"
               Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type local:WidgetIconPresenter}}}"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Visibility="Collapsed" />
+        <Path x:Name="StrokePath"
+              Stretch="Uniform"
+              Fill="{x:Null}"
+              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type local:WidgetIconPresenter}}}"
+              StrokeStartLineCap="Round"
+              StrokeEndLineCap="Round"
+              StrokeLineJoin="Round"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
               Visibility="Collapsed" />

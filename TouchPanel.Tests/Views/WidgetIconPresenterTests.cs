@@ -127,4 +127,97 @@ public sealed class WidgetIconPresenterTests
 
         Assert.Equal(20, width);
     }
+
+    [Fact]
+    public async Task StrokeIcon_RendersTheLineArtPathWithAFullBoxAndScaledPen()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var presenter = new WidgetIconPresenter
+            {
+                PathData = IconCatalog.PathDataFor("headphones"),
+                Stroke = true,
+                StrokeUnits = IconCatalog.LineArtStrokeUnits,
+                IconSize = 40,
+                Foreground = Brushes.Red,
+            };
+
+            var host = new Grid { Width = 60, Height = 60 };
+            host.Children.Add(presenter);
+            host.Measure(new Size(60, 60));
+            host.Arrange(new Rect(0, 0, 60, 60));
+            host.UpdateLayout();
+            presenter.UpdateLayout();
+
+            var glyph = Assert.IsType<TextBlock>(presenter.FindName("GlyphText"));
+            var filled = Assert.IsType<Path>(presenter.FindName("VectorPath"));
+            var stroked = Assert.IsType<Path>(presenter.FindName("StrokePath"));
+
+            return (
+                GlyphVisibility: glyph.Visibility,
+                FilledVisibility: filled.Visibility,
+                FilledFill: filled.Fill as SolidColorBrush,
+                StrokeVisibility: stroked.Visibility,
+                StrokeFill: stroked.Fill,
+                StrokeBrush: stroked.Stroke as SolidColorBrush,
+                StrokeThickness: stroked.StrokeThickness,
+                StrokeWidth: stroked.Width,
+                StrokeHeight: stroked.Height,
+                StrokeStretch: stroked.Stretch,
+                StartCap: stroked.StrokeStartLineCap,
+                EndCap: stroked.StrokeEndLineCap,
+                HasGeometry: stroked.Data is not null);
+        });
+
+        Assert.Equal(Visibility.Collapsed, result.GlyphVisibility);
+        Assert.Equal(Visibility.Collapsed, result.FilledVisibility);
+        Assert.Null(result.StrokeFill);
+        Assert.Equal(Visibility.Visible, result.StrokeVisibility);
+        Assert.Equal(Colors.Red, result.StrokeBrush?.Color);
+        Assert.Equal(40 * (IconCatalog.LineArtStrokeUnits / 24d), result.StrokeThickness, precision: 4);
+        Assert.Equal(40, result.StrokeWidth);
+        Assert.Equal(40, result.StrokeHeight);
+        Assert.Equal(Stretch.Uniform, result.StrokeStretch);
+        Assert.Equal(PenLineCap.Round, result.StartCap);
+        Assert.Equal(PenLineCap.Round, result.EndCap);
+        Assert.True(result.HasGeometry);
+    }
+
+    [Fact]
+    public async Task FilledBrandIcon_KeepsTheStrokePathHiddenAndTheFilledPathInset()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var presenter = new WidgetIconPresenter
+            {
+                PathData = IconCatalog.PathDataFor("steam"),
+                IconSize = 40,
+                Foreground = Brushes.Red,
+            };
+
+            presenter.Measure(new Size(60, 60));
+            presenter.Arrange(new Rect(0, 0, 60, 60));
+            presenter.UpdateLayout();
+
+            var filled = Assert.IsType<Path>(presenter.FindName("VectorPath"));
+            var stroked = Assert.IsType<Path>(presenter.FindName("StrokePath"));
+
+            return (
+                FilledVisibility: filled.Visibility,
+                FilledFill: (filled.Fill as SolidColorBrush)?.Color,
+                FilledWidth: filled.Width,
+                StrokeVisibility: stroked.Visibility,
+                StrokeThickness: stroked.StrokeThickness);
+        });
+
+        Assert.Equal(Visibility.Visible, result.FilledVisibility);
+        Assert.Equal(Colors.Red, result.FilledFill);
+        Assert.Equal(40 * WidgetIconPresenter.VectorScale, result.FilledWidth, precision: 3);
+        Assert.Equal(Visibility.Collapsed, result.StrokeVisibility);
+        Assert.Equal(0, result.StrokeThickness);
+    }
 }

@@ -294,11 +294,97 @@
                 <Setter Property="SelectionBrush" Value="{DynamicResource PanelAccentBrush}" />
             </Style>
 
+            <!--
+                Numeric field shell (user-requested integrated steppers): a themed surface with no
+                stock chrome, left corners rounded only. The two 40x40 steppers immediately to its
+                right own the square divider and the rounded right edge, so the row reads as a single
+                control group. The standard PART_ContentHost keeps caret/selection/IME behaviour.
+            -->
+            <Style x:Key="EditNumericTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource EditPropertyTextBoxStyle}">
+                <Setter Property="VerticalContentAlignment" Value="Center" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="TextBox">
+                            <Border x:Name="FieldSurface"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="8,0,0,8"
+                                    SnapsToDevicePixels="True">
+                                <ScrollViewer x:Name="PART_ContentHost"
+                                              Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center"
+                                              Focusable="False"
+                                              HorizontalScrollBarVisibility="Hidden"
+                                              VerticalScrollBarVisibility="Hidden" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                    <Setter TargetName="FieldSurface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="FieldSurface" Property="Opacity" Value="0.55" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <Style x:Key="EditPropertyCheckBoxStyle" TargetType="CheckBox">
                 <Setter Property="MinHeight" Value="40" />
                 <Setter Property="FontSize" Value="15" />
                 <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
                 <Setter Property="VerticalContentAlignment" Value="Center" />
+            </Style>
+
+            <!--
+                Numeric stepper: a touch-first 40x40 −/+ pair that shares the field's surface and
+                border. The decrease button owns the square inner edge and the divider; the increase
+                button rounds the outer right edge. Focusable=false keeps the field's keyboard focus
+                and live-edit session intact when the button is tapped.
+            -->
+            <Style TargetType="{x:Type controls:NumericStepperButton}">
+                <Setter Property="Width" Value="40" />
+                <Setter Property="Height" Value="40" />
+                <Setter Property="MinWidth" Value="40" />
+                <Setter Property="MinHeight" Value="40" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="IsTabStop" Value="False" />
+                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
+                <Setter Property="FontSize" Value="18" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="controls:NumericStepperButton">
+                            <Border x:Name="StepperSurface"
+                                    Background="{DynamicResource WidgetSurfaceBrush}"
+                                    BorderBrush="{DynamicResource WidgetBorderBrush}"
+                                    BorderThickness="0,1,1,1"
+                                    CornerRadius="0"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="Direction" Value="1">
+                                    <Setter TargetName="StepperSurface" Property="CornerRadius" Value="0,8,8,0" />
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="StepperSurface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="StepperSurface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                                    <Setter TargetName="StepperSurface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter TargetName="StepperSurface" Property="Opacity" Value="0.45" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
         </ResourceDictionary>
     </UserControl.Resources>
@@ -818,6 +904,21 @@
                                                                ItemsSource="{Binding IconOptions}"
                                                                SelectedItem="{Binding SelectedIcon, Mode=TwoWay}" />
 
+                                    <!--
+                                        User-requested addition: toggles only. An optional second
+                                        icon rendered in the accent colour while the toggle is on
+                                        (for example a muted microphone). "None" keeps the base
+                                        icon in both states.
+                                    -->
+                                    <StackPanel x:Name="OnIconSection"
+                                                Focusable="False"
+                                                Visibility="{Binding SupportsOnIcon, Converter={StaticResource EditModeVisibilityConverter}}">
+                                        <TextBlock Text="On icon (accent)" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                        <controls:InlineIconPicker x:Name="OnIconPicker"
+                                                                   ItemsSource="{Binding OnIconOptions}"
+                                                                   SelectedItem="{Binding SelectedOnIcon, Mode=TwoWay}" />
+                                    </StackPanel>
+
                                     <TextBlock Text="Foreground (#RRGGBB)" Style="{StaticResource EditPropertySectionLabelStyle}" />
                                     <TextBox x:Name="ForegroundBox"
                                              Text="{Binding ForegroundText, UpdateSourceTrigger=LostFocus}"
@@ -833,20 +934,73 @@
                                              Text="{Binding AccentText, UpdateSourceTrigger=LostFocus}"
                                              Style="{StaticResource EditPropertyTextBoxStyle}" />
 
-                                    <UniformGrid Columns="2" Margin="0,6,0,0">
-                                        <StackPanel Margin="0,0,4,0" Focusable="False">
-                                            <TextBlock Text="Font size (8-96)" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <!--
+                                        User-requested live preview and integrated steppers: every
+                                        numeric field is one row with the text field in the flexible
+                                        column and the two 40x40 steppers flush to its right. Typing
+                                        and stepping both preview the clamped value on the widget;
+                                        LostFocus/Enter commit the single undo group.
+                                    -->
+                                    <StackPanel Focusable="False">
+                                        <TextBlock Text="Font size (8-96)" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
                                             <TextBox x:Name="FontSizeBox"
-                                                     Text="{Binding FontSizeText, UpdateSourceTrigger=LostFocus}"
-                                                     Style="{StaticResource EditPropertyTextBoxStyle}" />
-                                        </StackPanel>
-                                        <StackPanel Margin="4,0,0,0" Focusable="False">
-                                            <TextBlock Text="Opacity (0-1)" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                                     Grid.Column="0"
+                                                     Height="40"
+                                                     Text="{Binding FontSizeText, UpdateSourceTrigger=PropertyChanged}"
+                                                     controls:NumericInput.Field="FontSizeText"
+                                                     Style="{StaticResource EditNumericTextBoxStyle}" />
+                                            <controls:NumericStepperButton x:Name="FontSizeDecreaseButton"
+                                                                           Grid.Column="1"
+                                                                           Field="FontSizeText"
+                                                                           Direction="-1"
+                                                                           Content="−"
+                                                                           ToolTip="Decrease font size"
+                                                                           AutomationProperties.Name="Decrease font size" />
+                                            <controls:NumericStepperButton x:Name="FontSizeIncreaseButton"
+                                                                           Grid.Column="2"
+                                                                           Field="FontSizeText"
+                                                                           Direction="1"
+                                                                           Content="+"
+                                                                           ToolTip="Increase font size"
+                                                                           AutomationProperties.Name="Increase font size" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,6,0,0" Focusable="False">
+                                        <TextBlock Text="Opacity (0-1)" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
                                             <TextBox x:Name="OpacityBox"
-                                                     Text="{Binding OpacityText, UpdateSourceTrigger=LostFocus}"
-                                                     Style="{StaticResource EditPropertyTextBoxStyle}" />
-                                        </StackPanel>
-                                    </UniformGrid>
+                                                     Grid.Column="0"
+                                                     Height="40"
+                                                     Text="{Binding OpacityText, UpdateSourceTrigger=PropertyChanged}"
+                                                     controls:NumericInput.Field="OpacityText"
+                                                     Style="{StaticResource EditNumericTextBoxStyle}" />
+                                            <controls:NumericStepperButton x:Name="OpacityDecreaseButton"
+                                                                           Grid.Column="1"
+                                                                           Field="OpacityText"
+                                                                           Direction="-1"
+                                                                           Content="−"
+                                                                           ToolTip="Decrease opacity"
+                                                                           AutomationProperties.Name="Decrease opacity" />
+                                            <controls:NumericStepperButton x:Name="OpacityIncreaseButton"
+                                                                           Grid.Column="2"
+                                                                           Field="OpacityText"
+                                                                           Direction="1"
+                                                                           Content="+"
+                                                                           ToolTip="Increase opacity"
+                                                                           AutomationProperties.Name="Increase opacity" />
+                                        </Grid>
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <!--
@@ -957,9 +1111,33 @@
                                         <StackPanel Focusable="False"
                                                     Visibility="{Binding ActionPicker.IsVolumeSetMode, Converter={StaticResource EditModeVisibilityConverter}}">
                                             <TextBlock Text="Level (0-100)" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                            <TextBox x:Name="ActionVolumeLevelBox"
-                                                     Text="{Binding ActionPicker.LevelText, UpdateSourceTrigger=LostFocus}"
-                                                     Style="{StaticResource EditPropertyTextBoxStyle}" />
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBox x:Name="ActionVolumeLevelBox"
+                                                         Grid.Column="0"
+                                                         Height="40"
+                                                         Text="{Binding ActionPicker.LevelText, UpdateSourceTrigger=PropertyChanged}"
+                                                         controls:NumericInput.Field="LevelText"
+                                                         Style="{StaticResource EditNumericTextBoxStyle}" />
+                                                <controls:NumericStepperButton x:Name="ActionVolumeLevelDecreaseButton"
+                                                                               Grid.Column="1"
+                                                                               Field="LevelText"
+                                                                               Direction="-1"
+                                                                               Content="−"
+                                                                               ToolTip="Decrease level"
+                                                                               AutomationProperties.Name="Decrease level" />
+                                                <controls:NumericStepperButton x:Name="ActionVolumeLevelIncreaseButton"
+                                                                               Grid.Column="2"
+                                                                               Field="LevelText"
+                                                                               Direction="1"
+                                                                               Content="+"
+                                                                               ToolTip="Increase level"
+                                                                               AutomationProperties.Name="Increase level" />
+                                            </Grid>
                                         </StackPanel>
                                         <StackPanel Focusable="False"
                                                     Visibility="{Binding ActionPicker.IsVolumeStepMode, Converter={StaticResource EditModeVisibilityConverter}}">
@@ -1003,34 +1181,126 @@
                                 </StackPanel>
 
                                 <TextBlock Text="Position &amp; size (DIP)" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                <UniformGrid Columns="2">
-                                    <StackPanel Margin="0,0,4,0" Focusable="False">
-                                        <TextBlock Text="X" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                <StackPanel Focusable="False">
+                                    <TextBlock Text="X" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
                                         <TextBox x:Name="XBox"
-                                                 Text="{Binding XText, UpdateSourceTrigger=LostFocus}"
-                                                 Style="{StaticResource EditPropertyTextBoxStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Margin="4,0,0,0" Focusable="False">
-                                        <TextBlock Text="Y" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                                 Grid.Column="0"
+                                                 Height="40"
+                                                 Text="{Binding XText, UpdateSourceTrigger=PropertyChanged}"
+                                                 controls:NumericInput.Field="XText"
+                                                 Style="{StaticResource EditNumericTextBoxStyle}" />
+                                        <controls:NumericStepperButton x:Name="XDecreaseButton"
+                                                                       Grid.Column="1"
+                                                                       Field="XText"
+                                                                       Direction="-1"
+                                                                       Content="−"
+                                                                       ToolTip="Move left"
+                                                                       AutomationProperties.Name="Decrease X" />
+                                        <controls:NumericStepperButton x:Name="XIncreaseButton"
+                                                                       Grid.Column="2"
+                                                                       Field="XText"
+                                                                       Direction="1"
+                                                                       Content="+"
+                                                                       ToolTip="Move right"
+                                                                       AutomationProperties.Name="Increase X" />
+                                    </Grid>
+                                </StackPanel>
+                                <StackPanel Margin="0,6,0,0" Focusable="False">
+                                    <TextBlock Text="Y" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
                                         <TextBox x:Name="YBox"
-                                                 Text="{Binding YText, UpdateSourceTrigger=LostFocus}"
-                                                 Style="{StaticResource EditPropertyTextBoxStyle}" />
-                                    </StackPanel>
-                                </UniformGrid>
-                                <UniformGrid Columns="2" Margin="0,6,0,0">
-                                    <StackPanel Margin="0,0,4,0" Focusable="False">
-                                        <TextBlock Text="Width" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                                 Grid.Column="0"
+                                                 Height="40"
+                                                 Text="{Binding YText, UpdateSourceTrigger=PropertyChanged}"
+                                                 controls:NumericInput.Field="YText"
+                                                 Style="{StaticResource EditNumericTextBoxStyle}" />
+                                        <controls:NumericStepperButton x:Name="YDecreaseButton"
+                                                                       Grid.Column="1"
+                                                                       Field="YText"
+                                                                       Direction="-1"
+                                                                       Content="−"
+                                                                       ToolTip="Move up"
+                                                                       AutomationProperties.Name="Decrease Y" />
+                                        <controls:NumericStepperButton x:Name="YIncreaseButton"
+                                                                       Grid.Column="2"
+                                                                       Field="YText"
+                                                                       Direction="1"
+                                                                       Content="+"
+                                                                       ToolTip="Move down"
+                                                                       AutomationProperties.Name="Increase Y" />
+                                    </Grid>
+                                </StackPanel>
+                                <StackPanel Margin="0,6,0,0" Focusable="False">
+                                    <TextBlock Text="Width" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
                                         <TextBox x:Name="WidthBox"
-                                                 Text="{Binding WidthText, UpdateSourceTrigger=LostFocus}"
-                                                 Style="{StaticResource EditPropertyTextBoxStyle}" />
-                                    </StackPanel>
-                                    <StackPanel Margin="4,0,0,0" Focusable="False">
-                                        <TextBlock Text="Height" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                                 Grid.Column="0"
+                                                 Height="40"
+                                                 Text="{Binding WidthText, UpdateSourceTrigger=PropertyChanged}"
+                                                 controls:NumericInput.Field="WidthText"
+                                                 Style="{StaticResource EditNumericTextBoxStyle}" />
+                                        <controls:NumericStepperButton x:Name="WidthDecreaseButton"
+                                                                       Grid.Column="1"
+                                                                       Field="WidthText"
+                                                                       Direction="-1"
+                                                                       Content="−"
+                                                                       ToolTip="Decrease width"
+                                                                       AutomationProperties.Name="Decrease width" />
+                                        <controls:NumericStepperButton x:Name="WidthIncreaseButton"
+                                                                       Grid.Column="2"
+                                                                       Field="WidthText"
+                                                                       Direction="1"
+                                                                       Content="+"
+                                                                       ToolTip="Increase width"
+                                                                       AutomationProperties.Name="Increase width" />
+                                    </Grid>
+                                </StackPanel>
+                                <StackPanel Margin="0,6,0,0" Focusable="False">
+                                    <TextBlock Text="Height" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
                                         <TextBox x:Name="HeightBox"
-                                                 Text="{Binding HeightText, UpdateSourceTrigger=LostFocus}"
-                                                 Style="{StaticResource EditPropertyTextBoxStyle}" />
-                                    </StackPanel>
-                                </UniformGrid>
+                                                 Grid.Column="0"
+                                                 Height="40"
+                                                 Text="{Binding HeightText, UpdateSourceTrigger=PropertyChanged}"
+                                                 controls:NumericInput.Field="HeightText"
+                                                 Style="{StaticResource EditNumericTextBoxStyle}" />
+                                        <controls:NumericStepperButton x:Name="HeightDecreaseButton"
+                                                                       Grid.Column="1"
+                                                                       Field="HeightText"
+                                                                       Direction="-1"
+                                                                       Content="−"
+                                                                       ToolTip="Decrease height"
+                                                                       AutomationProperties.Name="Decrease height" />
+                                        <controls:NumericStepperButton x:Name="HeightIncreaseButton"
+                                                                       Grid.Column="2"
+                                                                       Field="HeightText"
+                                                                       Direction="1"
+                                                                       Content="+"
+                                                                       ToolTip="Increase height"
+                                                                       AutomationProperties.Name="Increase height" />
+                                    </Grid>
+                                </StackPanel>
 
                                 <StackPanel Focusable="False"
                                             Visibility="{Binding HasSensor, Converter={StaticResource EditModeVisibilityConverter}}">
@@ -1047,20 +1317,66 @@
                                 <StackPanel Focusable="False"
                                             Visibility="{Binding HasRange, Converter={StaticResource EditModeVisibilityConverter}}">
                                     <TextBlock Text="Range" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                    <UniformGrid Columns="2">
-                                        <StackPanel Margin="0,0,4,0" Focusable="False">
-                                            <TextBlock Text="Minimum" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <StackPanel Focusable="False">
+                                        <TextBlock Text="Minimum" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
                                             <TextBox x:Name="MinBox"
-                                                     Text="{Binding MinimumText, UpdateSourceTrigger=LostFocus}"
-                                                     Style="{StaticResource EditPropertyTextBoxStyle}" />
-                                        </StackPanel>
-                                        <StackPanel Margin="4,0,0,0" Focusable="False">
-                                            <TextBlock Text="Maximum" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                                     Grid.Column="0"
+                                                     Height="40"
+                                                     Text="{Binding MinimumText, UpdateSourceTrigger=PropertyChanged}"
+                                                     controls:NumericInput.Field="MinimumText"
+                                                     Style="{StaticResource EditNumericTextBoxStyle}" />
+                                            <controls:NumericStepperButton x:Name="MinDecreaseButton"
+                                                                           Grid.Column="1"
+                                                                           Field="MinimumText"
+                                                                           Direction="-1"
+                                                                           Content="−"
+                                                                           ToolTip="Decrease minimum"
+                                                                           AutomationProperties.Name="Decrease minimum" />
+                                            <controls:NumericStepperButton x:Name="MinIncreaseButton"
+                                                                           Grid.Column="2"
+                                                                           Field="MinimumText"
+                                                                           Direction="1"
+                                                                           Content="+"
+                                                                           ToolTip="Increase minimum"
+                                                                           AutomationProperties.Name="Increase minimum" />
+                                        </Grid>
+                                    </StackPanel>
+                                    <StackPanel Margin="0,6,0,0" Focusable="False">
+                                        <TextBlock Text="Maximum" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
                                             <TextBox x:Name="MaxBox"
-                                                     Text="{Binding MaximumText, UpdateSourceTrigger=LostFocus}"
-                                                     Style="{StaticResource EditPropertyTextBoxStyle}" />
-                                        </StackPanel>
-                                    </UniformGrid>
+                                                     Grid.Column="0"
+                                                     Height="40"
+                                                     Text="{Binding MaximumText, UpdateSourceTrigger=PropertyChanged}"
+                                                     controls:NumericInput.Field="MaximumText"
+                                                     Style="{StaticResource EditNumericTextBoxStyle}" />
+                                            <controls:NumericStepperButton x:Name="MaxDecreaseButton"
+                                                                           Grid.Column="1"
+                                                                           Field="MaximumText"
+                                                                           Direction="-1"
+                                                                           Content="−"
+                                                                           ToolTip="Decrease maximum"
+                                                                           AutomationProperties.Name="Decrease maximum" />
+                                            <controls:NumericStepperButton x:Name="MaxIncreaseButton"
+                                                                           Grid.Column="2"
+                                                                           Field="MaximumText"
+                                                                           Direction="1"
+                                                                           Content="+"
+                                                                           ToolTip="Increase maximum"
+                                                                           AutomationProperties.Name="Increase maximum" />
+                                        </Grid>
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <!-- User-requested: byte/data-rate display unit (Gauge/Bar). Only
@@ -1080,17 +1396,65 @@
                                 <StackPanel Focusable="False"
                                             Visibility="{Binding HasStep, Converter={StaticResource EditModeVisibilityConverter}}">
                                     <TextBlock Text="Step" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                    <TextBox x:Name="StepBox"
-                                             Text="{Binding StepText, UpdateSourceTrigger=LostFocus}"
-                                             Style="{StaticResource EditPropertyTextBoxStyle}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="StepBox"
+                                                 Grid.Column="0"
+                                                 Height="40"
+                                                 Text="{Binding StepText, UpdateSourceTrigger=PropertyChanged}"
+                                                 controls:NumericInput.Field="StepText"
+                                                 Style="{StaticResource EditNumericTextBoxStyle}" />
+                                        <controls:NumericStepperButton x:Name="StepDecreaseButton"
+                                                                       Grid.Column="1"
+                                                                       Field="StepText"
+                                                                       Direction="-1"
+                                                                       Content="−"
+                                                                       ToolTip="Decrease step"
+                                                                       AutomationProperties.Name="Decrease step" />
+                                        <controls:NumericStepperButton x:Name="StepIncreaseButton"
+                                                                       Grid.Column="2"
+                                                                       Field="StepText"
+                                                                       Direction="1"
+                                                                       Content="+"
+                                                                       ToolTip="Increase step"
+                                                                       AutomationProperties.Name="Increase step" />
+                                    </Grid>
                                 </StackPanel>
 
                                 <StackPanel Focusable="False"
                                             Visibility="{Binding HasInitialValue, Converter={StaticResource EditModeVisibilityConverter}}">
                                     <TextBlock Text="Initial value" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                    <TextBox x:Name="InitialValueBox"
-                                             Text="{Binding InitialValueText, UpdateSourceTrigger=LostFocus}"
-                                             Style="{StaticResource EditPropertyTextBoxStyle}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="InitialValueBox"
+                                                 Grid.Column="0"
+                                                 Height="40"
+                                                 Text="{Binding InitialValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                 controls:NumericInput.Field="InitialValueText"
+                                                 Style="{StaticResource EditNumericTextBoxStyle}" />
+                                        <controls:NumericStepperButton x:Name="InitialValueDecreaseButton"
+                                                                       Grid.Column="1"
+                                                                       Field="InitialValueText"
+                                                                       Direction="-1"
+                                                                       Content="−"
+                                                                       ToolTip="Decrease initial value"
+                                                                       AutomationProperties.Name="Decrease initial value" />
+                                        <controls:NumericStepperButton x:Name="InitialValueIncreaseButton"
+                                                                       Grid.Column="2"
+                                                                       Field="InitialValueText"
+                                                                       Direction="1"
+                                                                       Content="+"
+                                                                       ToolTip="Increase initial value"
+                                                                       AutomationProperties.Name="Increase initial value" />
+                                    </Grid>
                                 </StackPanel>
 
                                 <StackPanel Focusable="False"
@@ -1107,9 +1471,33 @@
                                 <StackPanel Focusable="False"
                                             Visibility="{Binding HasWindow, Converter={StaticResource EditModeVisibilityConverter}}">
                                     <TextBlock Text="Window (s)" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                    <TextBox x:Name="WindowBox"
-                                             Text="{Binding WindowText, UpdateSourceTrigger=LostFocus}"
-                                             Style="{StaticResource EditPropertyTextBoxStyle}" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBox x:Name="WindowBox"
+                                                 Grid.Column="0"
+                                                 Height="40"
+                                                 Text="{Binding WindowText, UpdateSourceTrigger=PropertyChanged}"
+                                                 controls:NumericInput.Field="WindowText"
+                                                 Style="{StaticResource EditNumericTextBoxStyle}" />
+                                        <controls:NumericStepperButton x:Name="WindowDecreaseButton"
+                                                                       Grid.Column="1"
+                                                                       Field="WindowText"
+                                                                       Direction="-1"
+                                                                       Content="−"
+                                                                       ToolTip="Decrease window"
+                                                                       AutomationProperties.Name="Decrease window" />
+                                        <controls:NumericStepperButton x:Name="WindowIncreaseButton"
+                                                                       Grid.Column="2"
+                                                                       Field="WindowText"
+                                                                       Direction="1"
+                                                                       Content="+"
+                                                                       ToolTip="Increase window"
+                                                                       AutomationProperties.Name="Increase window" />
+                                    </Grid>
                                 </StackPanel>
 
                                 <StackPanel Focusable="False"

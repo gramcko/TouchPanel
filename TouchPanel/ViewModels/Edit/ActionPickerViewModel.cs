@@ -376,10 +376,20 @@ public sealed class ActionPickerViewModel : INotifyPropertyChanged
         get => _levelText;
         set
         {
+            // User-requested live preview: the level field shares the property editor's single live
+            // session, so typing previews the clamped volume immediately and one focus session is
+            // one undo group (the editor owns the session and the undo point).
+            if (_editor.TryApplyLiveNumericText(nameof(LevelText), value))
+            {
+                return;
+            }
+
             if (!SetField(ref _levelText, value ?? string.Empty))
             {
                 return;
             }
+
+            _editor.NotifyNumericFieldChanged(nameof(LevelText));
 
             if (!int.TryParse(_levelText.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var level))
             {
@@ -396,6 +406,19 @@ public sealed class ActionPickerViewModel : INotifyPropertyChanged
             volume.Level = clamped;
             SetField(ref _levelText, clamped.ToString(CultureInfo.InvariantCulture));
             Commit();
+        }
+    }
+
+    /// <summary>
+    /// Writes the level field's raw text for the property editor's live-edit helpers without running
+    /// the validation/commit setter (the same shape as the editor's other numeric fields).
+    /// </summary>
+    /// <param name="text">The text to display.</param>
+    internal void SetLevelText(string text)
+    {
+        if (SetField(ref _levelText, text, nameof(LevelText)))
+        {
+            _editor.NotifyNumericFieldChanged(nameof(LevelText));
         }
     }
 
@@ -622,6 +645,7 @@ public sealed class ActionPickerViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(SelectedVolumeMode));
         OnPropertyChanged(nameof(SelectedVolumeDirection));
         OnPropertyChanged(nameof(LevelText));
+        _editor.NotifyNumericFieldChanged(nameof(LevelText));
         OnPropertyChanged(nameof(SelectedHotkey));
         OnPropertyChanged(nameof(IsVolumeSetMode));
         OnPropertyChanged(nameof(IsVolumeStepMode));
@@ -643,7 +667,7 @@ public sealed class ActionPickerViewModel : INotifyPropertyChanged
         send is not null
         && send.Modifiers.Exists(modifier => string.Equals(modifier, name, StringComparison.OrdinalIgnoreCase));
 
-    private void SetError(string? message)
+    internal void SetError(string? message)
     {
         if (string.Equals(_validationError, message, StringComparison.Ordinal))
         {

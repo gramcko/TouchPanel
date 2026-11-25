@@ -387,7 +387,7 @@ Task granularity is a **vertical slice** (a coherent feature or subsystem), not 
 **Files/directories.**
 - `TouchPanel/ViewModels/Edit/ActionPickerViewModel.cs` — catalog of M1 types + `sendKeys`; typed parameter editors; **executable file browse** for run-command ("open program").
 - `TouchPanel/Views/Edit/` — action picker, label/icon picker (built-in catalog), color/font/opacity editors.
-- `TouchPanel/Widgets/` — built-in icon catalog resource (1–64 entries).
+- `TouchPanel/Widgets/` — built-in icon catalog resource (1–96 entries; the inline picker keeps it navigable).
 - `TouchPanel/Config/WidgetConfig.cs` — appearance override fields (`icon`, `foreground`, `background`, `accent`, `fontSize`, `opacity`).
 - `TouchPanel/Config/Migrations/` — new `V2ToV3Migration : IConfigMigration` (additive: set `schemaVersion=3`, default the new appearance fields to theme defaults / null; no v2 field removed) completing the ordered chain.
 - `TouchPanel/Config/PanelConfig.cs` — bump `CurrentSchemaVersion` to the delivered **3**.

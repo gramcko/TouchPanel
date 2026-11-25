@@ -35,10 +35,16 @@ namespace TouchPanel.ViewModels.Edit;
 /// always finite, in-page, and at least the 40 DIP minimum.</para>
 /// <para><b>Threading.</b> All editing runs on the UI thread (edit mode); no I/O happens here.</para>
 /// </remarks>
-public sealed class PropertyEditorViewModel : INotifyPropertyChanged
+public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFieldHost
 {
     /// <summary>Maximum accepted label length in characters (M2-RF-435).</summary>
     public const int MaxLabelLength = 128;
+
+    /// <summary>
+    /// The increment/decrement applied by one font-size stepper tap or Up/Down keypress
+    /// (user-requested font-size stepper), in DIPs.
+    /// </summary>
+    public const double FontSizeStepValue = 1;
 
     private readonly EditModeService _owner;
     private readonly WidgetViewModelBase _widget;
@@ -61,6 +67,7 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
     private string _windowText;
     private IconOption _selectedIcon = NoneIcon;
     private IconOption _selectedLabelIcon = NoneIcon;
+    private IconOption _selectedOnIcon = NoneIcon;
     private string _foregroundText = string.Empty;
     private string _backgroundText = string.Empty;
     private string _accentText = string.Empty;
@@ -72,6 +79,15 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
     private bool _showValue;
     private bool _rateScaleAdopted;
     private string? _validationError;
+
+    // Live-edit session state (user-requested live preview): the active numeric field, whether the
+    // group's single undo point has already been recorded, whether focus opened the group (typing)
+    // or a stepper did (one hold/tap is its own group), and the last text that produced a valid,
+    // applied value (restored when an invalid commit is attempted).
+    private string? _liveEditProperty;
+    private bool _liveEditUndoRecorded;
+    private bool _liveEditFromFocus;
+    private string _liveEditLastValidText = string.Empty;
 
     /// <summary>The icon-picker entry that represents "no icon" (the widget shows none).</summary>
     private static readonly IconOption NoneIcon = new(string.Empty, string.Empty, "(none)");
@@ -172,6 +188,11 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         LabelIconOptions = iconOptions;
         _selectedIcon = IconCatalog.TryGet(config.Icon, out var icon) ? icon : NoneIcon;
         _selectedLabelIcon = IconCatalog.TryGet(config.LabelIcon, out var labelIcon) ? labelIcon : NoneIcon;
+        OnIconOptions = iconOptions;
+        _selectedOnIcon = config is ToggleWidgetConfig toggleConfig
+            && IconCatalog.TryGet(toggleConfig.OnIcon, out var onIcon)
+                ? onIcon
+                : NoneIcon;
         _foregroundText = config.Foreground ?? _themeDefaults.Foreground;
         _backgroundText = config.Background ?? _themeDefaults.Background;
         _accentText = config.Accent ?? _themeDefaults.Accent;
@@ -181,6 +202,11 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         // M5-RF-531: an explicit, idempotent Apply command so the property panel's Apply affordance
         // performs a real commit instead of acting only as a focus target.
         ApplyCommand = new RelayCommand(Apply);
+
+        // User-requested font-size stepper: the −/+ buttons and the Up/Down keys share one step
+        // operation, so touch and keyboard behave identically.
+        DecreaseFontSizeCommand = new RelayCommand(() => DecreaseFontSize());
+        IncreaseFontSizeCommand = new RelayCommand(() => IncreaseFontSize());
 
         // User-requested addition: byte/data-rate display unit (Gauge/Bar) and image-file browse.
         DisplayUnitOptions =
@@ -290,6 +316,370 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
     /// its <c>LostFocus</c> binding.
     /// </summary>
     public ICommand ApplyCommand { get; }
+
+    /// <summary>
+    /// Gets the command backing the Font size field's <b>−</b> stepper (user-requested addition). One
+    /// invocation decreases the value by one DIP, clamped to the 8–96 DIP range, applies it to the
+    /// live widget immediately, and rewrites the field to the canonical number. At the lower bound
+    /// the command is a no-op (the view disables the button through <see cref="CanDecreaseFontSize"/>).
+    /// </summary>
+    public ICommand DecreaseFontSizeCommand { get; }
+
+    /// <summary>
+    /// Gets the command backing the Font size field's <b>+</b> stepper (user-requested addition); see
+    /// <see cref="DecreaseFontSizeCommand"/> for the shared behaviour.
+    /// </summary>
+    public ICommand IncreaseFontSizeCommand { get; }
+
+    /// <summary>
+    /// Gets a value indicating whether the font size can be decreased by one step. It is
+    /// <see langword="false"/> at the 8 DIP lower bound, which disables the <b>−</b> button; the same
+    /// step is ignored when it arrives from the Down arrow key.
+    /// </summary>
+    public bool CanDecreaseFontSize => CanStepNumericField(nameof(FontSizeText), -1);
+
+    /// <summary>
+    /// Gets a value indicating whether the font size can be increased by one step. It is
+    /// <see langword="false"/> at the 96 DIP upper bound, which disables the <b>+</b> button; the same
+    /// step is ignored when it arrives from the Up arrow key.
+    /// </summary>
+    public bool CanIncreaseFontSize => CanStepNumericField(nameof(FontSizeText), 1);
+
+    /// <summary>
+    /// Gets a value indicating whether a live-edit session is active for the font-size field. While
+    /// active, typing previews the clamped value on the live widget on every change without rewriting
+    /// the text or adding undo steps beyond the group's first one.
+    /// </summary>
+    public bool IsLiveEditingFontSize => IsLiveEditingNumericField(nameof(FontSizeText));
+
+    /// <summary>
+    /// Gets a value indicating whether a live-edit session is active for <paramref name="field"/>
+    /// (user-requested live preview, generalized to every numeric field).
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <returns><see langword="true"/> when the field owns the active session.</returns>
+    internal bool IsLiveEditingNumericField(string field) => string.Equals(
+        _liveEditProperty,
+        field,
+        StringComparison.Ordinal);
+
+    /// <summary>
+    /// Begins a live-edit session for the font-size field: called when the field gains focus. The
+    /// first applied change of the session records the group's single undo point; later changes
+    /// preview without recording, so one Undo restores the value from before the whole edit.
+    /// </summary>
+    public void BeginLiveEdit() => BeginNumericLiveEdit(nameof(FontSizeText), fromFocus: true);
+
+    /// <summary>
+    /// Begins a live-edit session for a supported numeric field, preserving the existing single-undo
+    /// group policy. A session for a different field is committed first, so moving directly from one
+    /// field to another never merges two edits into one undo step.
+    /// </summary>
+    /// <param name="propertyName">The field's property name; unsupported names are ignored.</param>
+    public void BeginLiveEdit(string propertyName) => BeginNumericLiveEdit(propertyName, fromFocus: true);
+
+    /// <summary>
+    /// Begins (or continues) the live-edit session for a numeric field. Kept public and WPF-free so
+    /// the reusable input/stepper controls can open the same session the typed path uses.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="fromFocus">Whether focus opened the session (typing) or a stepper did.</param>
+    public void BeginNumericLiveEdit(string field, bool fromFocus)
+    {
+        if (GetNumericFieldSpec(field) is null)
+        {
+            return;
+        }
+
+        if (_liveEditProperty is not null
+            && !string.Equals(_liveEditProperty, field, StringComparison.Ordinal))
+        {
+            CommitNumericLiveEdit(_liveEditProperty);
+        }
+
+        if (_liveEditProperty is null)
+        {
+            _liveEditProperty = field;
+            _liveEditUndoRecorded = false;
+            _liveEditFromFocus = fromFocus;
+            _liveEditLastValidText = GetNumericFieldText(field);
+        }
+        else if (fromFocus)
+        {
+            // A stepper opened the group first and the field then received focus: keep the one
+            // group but let LostFocus/Enter own its end from now on.
+            _liveEditFromFocus = true;
+        }
+    }
+
+    /// <summary>Alias for <see cref="BeginLiveEdit()"/> naming the field explicitly.</summary>
+    public void BeginFontSizeLiveEdit() => BeginLiveEdit(nameof(FontSizeText));
+
+    /// <summary>
+    /// Ends the active live-edit session (LostFocus/Enter): a valid value is normalized and the text
+    /// is rewritten to the canonical format, an empty value clears the override (inherit the theme
+    /// default) for the appearance fields, and an invalid value restores the last valid text. The
+    /// whole session remains one undo step. Safe to call when no session is active.
+    /// </summary>
+    public void CommitLiveEdit()
+    {
+        if (_liveEditProperty is { } active)
+        {
+            CommitNumericLiveEdit(active);
+        }
+    }
+
+    /// <summary>
+    /// Ends the active live-edit session for a supported field; see <see cref="CommitLiveEdit()"/>.
+    /// Unsupported or inactive fields are a no-op.
+    /// </summary>
+    /// <param name="propertyName">The field's property name.</param>
+    public void CommitLiveEdit(string propertyName) => CommitNumericLiveEdit(propertyName);
+
+    /// <summary>Alias for <see cref="CommitLiveEdit()"/> naming the field explicitly.</summary>
+    public void CommitFontSizeLiveEdit() => CommitLiveEdit(nameof(FontSizeText));
+
+    /// <summary>
+    /// Ends an active live-edit session cleanly, committing the pending value (used when the selection
+    /// changes or the editor collapses mid-edit). Safe when no session is active.
+    /// </summary>
+    public void EndLiveEdit() => CommitLiveEdit();
+
+    /// <summary>
+    /// Commits the session for <paramref name="field"/> when it owns the active session. The value is
+    /// normalized/clamped and the text is rewritten to its canonical form.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    public void CommitNumericLiveEdit(string field)
+    {
+        if (!string.Equals(_liveEditProperty, field, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _liveEditProperty = null;
+        CommitNumericFieldCore(field);
+    }
+
+    /// <summary>
+    /// Ends a stepper-opened session on release, so one press/hold is one undo group. A session
+    /// opened by keyboard focus is deliberately left open: the typed and stepped changes belong to
+    /// the same focus session, exactly as before.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    public void CommitNumericStepHold(string field)
+    {
+        if (!string.Equals(_liveEditProperty, field, StringComparison.Ordinal) || _liveEditFromFocus)
+        {
+            return;
+        }
+
+        _liveEditProperty = null;
+        CommitNumericFieldCore(field);
+    }
+
+    /// <summary>
+    /// Applies one stepper step to any numeric field: the value is read from the field when it parses,
+    /// otherwise from the last valid/applied value; it is normalized into the field's range, moved by
+    /// the field's step (or magnitude step), applied live, and the field is rewritten to canonical
+    /// text. At a bound the call is a no-op, which is what disables the button.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="direction"><c>-1</c> or <c>+1</c>.</param>
+    /// <returns><see langword="true"/> when the value moved.</returns>
+    public bool StepNumericField(string field, int direction)
+    {
+        if (direction is not (-1 or 1)
+            || GetNumericFieldSpec(field) is not { } spec
+            || !TryGetNumericBaseValue(field, spec, out var current)
+            || !NumericFieldMath.TryStep(current, direction, spec, out var next))
+        {
+            return false;
+        }
+
+        if (_liveEditProperty is not null
+            && !string.Equals(_liveEditProperty, field, StringComparison.Ordinal))
+        {
+            CommitNumericLiveEdit(_liveEditProperty);
+        }
+
+        if (!IsLiveEditingNumericField(field))
+        {
+            BeginNumericLiveEdit(field, fromFocus: false);
+        }
+
+        var applied = ApplyNumericValue(field, next);
+        var canonical = NumericFieldMath.Format(applied, spec.Decimals);
+        WriteNumericFieldText(field, canonical);
+        _liveEditLastValidText = canonical;
+        ClearNumericFieldError(field);
+        NotifyNumericFieldChanged(field);
+        return true;
+    }
+
+    /// <summary>
+    /// Gets whether a step in <paramref name="direction"/> would move the field's value. The button
+    /// uses this for its enabled state; a bound therefore disables just the relevant button.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="direction"><c>-1</c> or <c>+1</c>.</param>
+    /// <returns><see langword="true"/> when the step is possible.</returns>
+    public bool CanStepNumericField(string field, int direction)
+    {
+        if (direction is not (-1 or 1) || GetNumericFieldSpec(field) is not { } spec)
+        {
+            return false;
+        }
+
+        return TryGetNumericBaseValue(field, spec, out var current)
+            && NumericFieldMath.TryStep(current, direction, spec, out _);
+    }
+
+    /// <summary>
+    /// Gets the current spec (step, range, decimals, sign policy) for a numeric field, or
+    /// <see langword="null"/> when the field is not numeric for the current widget. Bounds are
+    /// computed from the live state: geometry is bound by the page and current extents, and the
+    /// range bounds are bound by the opposite bound and the slider step.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <returns>The field spec.</returns>
+    public NumericFieldSpec? GetNumericFieldSpec(string field) => field switch
+    {
+        nameof(FontSizeText) => new(
+            FontSizeStepValue,
+            WidgetAppearance.MinFontSize,
+            WidgetAppearance.MaxFontSize,
+            Decimals: 0,
+            AllowNegative: false,
+            AllowsEmpty: true),
+        nameof(OpacityText) => new(
+            0.1,
+            WidgetAppearance.MinOpacity,
+            WidgetAppearance.MaxOpacity,
+            Decimals: 1,
+            AllowNegative: false,
+            AllowsEmpty: true),
+        nameof(XText) => new(
+            1,
+            0,
+            Math.Max(0, _owner.PageWidth - _widget.Width),
+            Decimals: 0,
+            AllowNegative: false),
+        nameof(YText) => new(
+            1,
+            0,
+            Math.Max(0, _owner.PageHeight - _widget.Height),
+            Decimals: 0,
+            AllowNegative: false),
+        nameof(WidthText) => new(
+            1,
+            EditModeService.MinimumWidgetSize,
+            Math.Max(EditModeService.MinimumWidgetSize, _owner.PageWidth - _widget.X),
+            Decimals: 0,
+            AllowNegative: false),
+        nameof(HeightText) => new(
+            1,
+            EditModeService.MinimumWidgetSize,
+            Math.Max(EditModeService.MinimumWidgetSize, _owner.PageHeight - _widget.Y),
+            Decimals: 0,
+            AllowNegative: false),
+        nameof(MinimumText) when HasRange => new(
+            Step: 1,
+            -ConfigValidator.MaxGaugeMagnitude,
+            ReadMaximum() - RangeGap(),
+            Decimals: 3,
+            AllowNegative: true,
+            StepByMagnitude: true),
+        nameof(MaximumText) when HasRange => new(
+            Step: 1,
+            ReadMinimum() + RangeGap(),
+            ConfigValidator.MaxGaugeMagnitude,
+            Decimals: 3,
+            AllowNegative: true,
+            StepByMagnitude: true),
+        nameof(StepText) when HasStep => new(
+            Step: 1,
+            Minimum: 0.001,
+            Maximum: Math.Max(0.001, _config is SliderWidgetConfig stepSlider
+                ? stepSlider.Maximum - stepSlider.Minimum
+                : 0.001),
+            Decimals: 3,
+            AllowNegative: false,
+            StepByMagnitude: true,
+            FineStep: 0.1),
+        nameof(InitialValueText) when HasInitialValue => InitialValueSpec(),
+        nameof(WindowText) when HasWindow => new(
+            1,
+            SparklineWidgetConfig.MinWindowSeconds,
+            SparklineWidgetConfig.MaxWindowSeconds,
+            Decimals: 3,
+            AllowNegative: false),
+        nameof(ActionPickerViewModel.LevelText) when _config.Action is VolumeActionConfig => new(
+            1,
+            ConfigValidator.MinVolumeLevel,
+            ConfigValidator.MaxVolumeLevel,
+            Decimals: 0,
+            AllowNegative: false),
+        _ => null,
+    };
+
+    /// <summary>Gets the raw text of a numeric field for the reusable input/stepper controls.</summary>
+    /// <param name="field">The field key.</param>
+    /// <returns>The raw text, or an empty string when the field is unknown.</returns>
+    public string GetNumericFieldText(string field) => field switch
+    {
+        nameof(FontSizeText) => _fontSizeText,
+        nameof(OpacityText) => _opacityText,
+        nameof(XText) => _xText,
+        nameof(YText) => _yText,
+        nameof(WidthText) => _widthText,
+        nameof(HeightText) => _heightText,
+        nameof(MinimumText) => _minimumText,
+        nameof(MaximumText) => _maximumText,
+        nameof(StepText) => _stepText,
+        nameof(InitialValueText) => _initialValueText,
+        nameof(WindowText) => _windowText,
+        nameof(ActionPickerViewModel.LevelText) => ActionPicker?.LevelText ?? string.Empty,
+        _ => string.Empty,
+    };
+
+    /// <summary>
+    /// Raises the change notification for a field written by another view model (the action picker's
+    /// volume level) so the stepper enablement stays in sync without duplicating state.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    internal void NotifyNumericFieldChanged(string field) => OnPropertyChanged(field);
+
+    /// <summary>
+    /// Applies a live numeric text edit when <paramref name="field"/> owns the session. Used by the
+    /// action picker's level field, whose text lives on the picker rather than on this editor.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="value">The raw text.</param>
+    /// <returns><see langword="true"/> when a live session handled the edit.</returns>
+    internal bool TryApplyLiveNumericText(string field, string? value)
+    {
+        if (!IsLiveEditingNumericField(field))
+        {
+            return false;
+        }
+
+        ApplyLiveNumericText(field, value);
+        return true;
+    }
+
+    /// <summary>Decreases the font size by one step; see <see cref="StepNumericField"/>.</summary>
+    /// <returns><see langword="true"/> when the value changed.</returns>
+    public bool DecreaseFontSize() => StepFontSize(-1);
+
+    /// <summary>Increases the font size by one step; see <see cref="StepNumericField"/>.</summary>
+    /// <returns><see langword="true"/> when the value changed.</returns>
+    public bool IncreaseFontSize() => StepFontSize(1);
+
+    /// <summary>Applies one font-size step; see <see cref="StepNumericField"/>.</summary>
+    /// <param name="direction"><c>-1</c> or <c>+1</c>.</param>
+    /// <returns><see langword="true"/> when the value changed.</returns>
+    public bool StepFontSize(int direction) => StepNumericField(nameof(FontSizeText), direction);
 
     /// <summary>Gets a value indicating whether the edited widget exposes a slider step.</summary>
     public bool HasStep => _config is SliderWidgetConfig;
@@ -451,6 +841,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _xText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(XText)))
+            {
+                ApplyLiveNumericText(nameof(XText), value);
+                return;
+            }
+
             var text = value ?? string.Empty;
             if (!SetField(ref _xText, text))
             {
@@ -475,6 +871,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _yText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(YText)))
+            {
+                ApplyLiveNumericText(nameof(YText), value);
+                return;
+            }
+
             var text = value ?? string.Empty;
             if (!SetField(ref _yText, text))
             {
@@ -499,6 +901,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _widthText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(WidthText)))
+            {
+                ApplyLiveNumericText(nameof(WidthText), value);
+                return;
+            }
+
             var text = value ?? string.Empty;
             if (!SetField(ref _widthText, text))
             {
@@ -523,6 +931,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _heightText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(HeightText)))
+            {
+                ApplyLiveNumericText(nameof(HeightText), value);
+                return;
+            }
+
             var text = value ?? string.Empty;
             if (!SetField(ref _heightText, text))
             {
@@ -589,6 +1003,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _minimumText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(MinimumText)))
+            {
+                ApplyLiveNumericText(nameof(MinimumText), value);
+                return;
+            }
+
             if (!SetField(ref _minimumText, value ?? string.Empty))
             {
                 return;
@@ -615,6 +1035,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _maximumText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(MaximumText)))
+            {
+                ApplyLiveNumericText(nameof(MaximumText), value);
+                return;
+            }
+
             if (!SetField(ref _maximumText, value ?? string.Empty))
             {
                 return;
@@ -641,6 +1067,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _stepText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(StepText)))
+            {
+                ApplyLiveNumericText(nameof(StepText), value);
+                return;
+            }
+
             if (!SetField(ref _stepText, value ?? string.Empty))
             {
                 return;
@@ -682,6 +1114,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _initialValueText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(InitialValueText)))
+            {
+                ApplyLiveNumericText(nameof(InitialValueText), value);
+                return;
+            }
+
             if (!SetField(ref _initialValueText, value ?? string.Empty))
             {
                 return;
@@ -715,6 +1153,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _windowText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(WindowText)))
+            {
+                ApplyLiveNumericText(nameof(WindowText), value);
+                return;
+            }
+
             if (!SetField(ref _windowText, value ?? string.Empty))
             {
                 return;
@@ -1039,6 +1483,54 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
+    /// Gets a value indicating whether the edited widget exposes a distinct on-state icon
+    /// (user-requested addition): only the Toggle has on/off states, so only it is offered the picker.
+    /// </summary>
+    public bool SupportsOnIcon => _config is ToggleWidgetConfig;
+
+    /// <summary>
+    /// Gets the entries offered by the "On icon (accent)" picker (user-requested addition):
+    /// "(none)" plus the built-in icon catalog. "(none)" keeps the base icon in both states; a chosen
+    /// entry is rendered instead while the toggle is on, coloured with the widget's accent.
+    /// </summary>
+    public IReadOnlyList<IconOption> OnIconOptions { get; }
+
+    /// <summary>
+    /// Gets or sets the icon rendered by a Toggle while it is on (user-requested addition). Selecting
+    /// "(none)" clears <see cref="ToggleWidgetConfig.OnIcon"/> so the base icon shows in both states;
+    /// a chosen catalog entry stores its stable id, is projected live, and marks the layout dirty.
+    /// </summary>
+    public IconOption SelectedOnIcon
+    {
+        get => _selectedOnIcon;
+        set
+        {
+            var option = value ?? NoneIcon;
+            if (string.Equals(_selectedOnIcon.Id, option.Id, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            // Same containment as the other icon pickers: only built-in catalog ids may be persisted.
+            if (option.Id.Length > 0 && !IconCatalog.TryGet(option.Id, out _))
+            {
+                SetError("On icon must be one of the built-in icons.");
+                return;
+            }
+
+            if (_config is not ToggleWidgetConfig toggle)
+            {
+                return;
+            }
+
+            _selectedOnIcon = option;
+            toggle.OnIcon = option.Id.Length == 0 ? null : option.Id;
+            OnPropertyChanged();
+            CommitConfig();
+        }
+    }
+
+    /// <summary>
     /// Gets or sets the selected built-in icon (RF-043/M2-RF-435). Selecting "(none)" clears the
     /// icon; a chosen catalog entry stores its stable id. The change is committed to the config,
     /// projected live, and marks the layout dirty.
@@ -1108,6 +1600,14 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _fontSizeText;
         set
         {
+            // User-requested live preview: while the field is focused, keep exactly the text being
+            // typed and preview the clamped value on the live widget (no rewrite, no extra undo step).
+            if (IsLiveEditingNumericField(nameof(FontSizeText)))
+            {
+                ApplyLiveNumericText(nameof(FontSizeText), value);
+                return;
+            }
+
             var text = (value ?? string.Empty).Trim();
 
             // M5-RF-543: a theme default is a true default. While the field is inherited it is
@@ -1152,6 +1652,425 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
     }
 
     /// <summary>
+    /// Previews a numeric keystroke while its field is focused: stores exactly the typed text (never
+    /// the clamped/canonical value), applies a valid number clamped to the field's range to the live
+    /// widget, and records the session's single undo point on the first applied change. Empty and
+    /// non-numeric intermediate values change nothing and surface the inline error, which clears as
+    /// soon as the input is valid again.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="value">The raw text typed into the field.</param>
+    private void ApplyLiveNumericText(string field, string? value)
+    {
+        if (GetNumericFieldSpec(field) is not { } spec)
+        {
+            return;
+        }
+
+        var text = value ?? string.Empty;
+        WriteNumericFieldText(field, text);
+
+        var trimmed = text.Trim();
+        if (trimmed.Length == 0 || !NumericFieldMath.TryParse(trimmed, out var parsed))
+        {
+            // Keep the user's text so deleting/retyping is never fought by a rewrite.
+            SetNumericFieldError(field, NumberMessage(field));
+            return;
+        }
+
+        ApplyNumericValue(field, NumericFieldMath.Normalize(parsed, spec));
+        _liveEditLastValidText = text;
+        ClearNumericFieldError(field);
+    }
+
+    /// <summary>
+    /// Ends a numeric live session: normalizes and rewrites a valid value to the canonical format,
+    /// clears an appearance override for an empty value, and restores the last valid text for an
+    /// invalid value. The session's undo group is completed (never doubled).
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    private void CommitNumericFieldCore(string field)
+    {
+        if (GetNumericFieldSpec(field) is not { } spec)
+        {
+            return;
+        }
+
+        var trimmed = GetNumericFieldText(field).Trim();
+
+        // M5-RF-543: a focus/clear/blur on an inherited appearance field with no applied preview is
+        // not an edit. Keep the theme default inherited (no pinned override, no dirty state).
+        if (spec.AllowsEmpty && IsInheritedAppearanceText(field, trimmed))
+        {
+            WriteNumericFieldText(field, ThemeFieldText(field));
+            ClearNumericFieldError(field);
+            return;
+        }
+
+        if (trimmed.Length == 0)
+        {
+            if (spec.AllowsEmpty)
+            {
+                ClearAppearanceOverride(field);
+                WriteNumericFieldText(field, ThemeFieldText(field));
+                ClearNumericFieldError(field);
+                return;
+            }
+
+            SetNumericFieldError(field, NumberMessage(field));
+            RestoreLastValidText(field, spec);
+            return;
+        }
+
+        if (!NumericFieldMath.TryParse(trimmed, out var parsed))
+        {
+            SetNumericFieldError(field, NumberMessage(field));
+            RestoreLastValidText(field, spec);
+            return;
+        }
+
+        var normalized = NumericFieldMath.Normalize(parsed, spec);
+        var applied = ApplyNumericValue(field, normalized);
+        var canonical = NumericFieldMath.Format(applied, spec.Decimals);
+        WriteNumericFieldText(field, canonical);
+        _liveEditLastValidText = canonical;
+        ClearNumericFieldError(field);
+    }
+
+    /// <summary>
+    /// Applies a numeric value to the live widget through the existing edit path. The session's first
+    /// change records the undo point and later changes only move the history's current snapshot, so
+    /// the whole edit stays one undo step. Returns the value actually applied (clamped, rounded, or
+    /// snapped, for example a slider value snapped to its step).
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="value">The normalized candidate value.</param>
+    /// <returns>The applied value.</returns>
+    private double ApplyNumericValue(string field, double value)
+    {
+        var recordUndo = !_liveEditUndoRecorded;
+
+        switch (field)
+        {
+            case nameof(FontSizeText):
+            {
+                var normalized = WidgetAppearance.NormalizeFontSize(value) ?? WidgetAppearance.MinFontSize;
+                _config.FontSize = normalized;
+                MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                return normalized;
+            }
+
+            case nameof(OpacityText):
+            {
+                var normalized = WidgetAppearance.NormalizeOpacity(value) ?? WidgetAppearance.MinOpacity;
+                _config.Opacity = normalized;
+                MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                return normalized;
+            }
+
+            case nameof(XText):
+                MarkLiveUndo(recordUndo, _owner.MoveWidgetLive(_widget, value, _widget.Y, recordUndo));
+                return _widget.X;
+
+            case nameof(YText):
+                MarkLiveUndo(recordUndo, _owner.MoveWidgetLive(_widget, _widget.X, value, recordUndo));
+                return _widget.Y;
+
+            case nameof(WidthText):
+                MarkLiveUndo(recordUndo, _owner.ResizeWidgetLive(_widget, value, _widget.Height, recordUndo));
+                return _widget.Width;
+
+            case nameof(HeightText):
+                MarkLiveUndo(recordUndo, _owner.ResizeWidgetLive(_widget, _widget.Width, value, recordUndo));
+                return _widget.Height;
+
+            case nameof(MinimumText):
+                if (TrySetMinimum(value, commit: false))
+                {
+                    MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                }
+
+                return ReadMinimum();
+
+            case nameof(MaximumText):
+                if (TrySetMaximum(value, commit: false))
+                {
+                    MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                }
+
+                return ReadMaximum();
+
+            case nameof(StepText):
+                if (_config is SliderWidgetConfig stepSlider)
+                {
+                    var span = stepSlider.Maximum - stepSlider.Minimum;
+                    stepSlider.Step = Math.Clamp(value, 0.001, Math.Max(0.001, span));
+                    MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                    return stepSlider.Step;
+                }
+
+                return value;
+
+            case nameof(InitialValueText):
+                if (_config is SliderWidgetConfig valueSlider)
+                {
+                    valueSlider.Value = ConfigValidator.NormalizeSliderValue(
+                        value,
+                        valueSlider.Minimum,
+                        valueSlider.Maximum,
+                        valueSlider.Step);
+                    MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                    return valueSlider.Value;
+                }
+
+                return value;
+
+            case nameof(WindowText):
+                if (_config is SparklineWidgetConfig sparkline)
+                {
+                    sparkline.WindowSeconds = Math.Clamp(
+                        value,
+                        SparklineWidgetConfig.MinWindowSeconds,
+                        SparklineWidgetConfig.MaxWindowSeconds);
+                    MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                    return sparkline.WindowSeconds;
+                }
+
+                return value;
+
+            case nameof(ActionPickerViewModel.LevelText):
+                if (_config.Action is VolumeActionConfig volume)
+                {
+                    volume.Level = Math.Clamp(
+                        (int)Math.Round(value, MidpointRounding.AwayFromZero),
+                        ConfigValidator.MinVolumeLevel,
+                        ConfigValidator.MaxVolumeLevel);
+                    MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                    return volume.Level;
+                }
+
+                return value;
+
+            default:
+                return value;
+        }
+    }
+
+    /// <summary>Marks the session's undo point as recorded after its first real change.</summary>
+    /// <param name="recordUndo">Whether the call was allowed to record.</param>
+    /// <param name="recorded">Whether the edit service actually recorded a new step.</param>
+    private void MarkLiveUndo(bool recordUndo, bool recorded)
+    {
+        if (recordUndo && recorded)
+        {
+            _liveEditUndoRecorded = true;
+        }
+    }
+
+    /// <summary>
+    /// Reads the value a stepper step starts from: the field's text when it parses, otherwise the
+    /// last valid text of the active session, otherwise the applied value (never a bare default).
+    /// The result is normalized into the field's range so a typed "120" steps from the applied bound.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="spec">The field spec.</param>
+    /// <param name="value">The normalized base value.</param>
+    /// <returns><see langword="true"/> when a finite base value exists.</returns>
+    private bool TryGetNumericBaseValue(string field, NumericFieldSpec spec, out double value)
+    {
+        if (NumericFieldMath.TryParse(GetNumericFieldText(field), out var typed))
+        {
+            value = NumericFieldMath.Normalize(typed, spec);
+            return true;
+        }
+
+        if (IsLiveEditingNumericField(field)
+            && NumericFieldMath.TryParse(_liveEditLastValidText, out var lastValid))
+        {
+            value = NumericFieldMath.Normalize(lastValid, spec);
+            return true;
+        }
+
+        value = NumericFieldMath.Normalize(GetAppliedNumericValue(field), spec);
+        return double.IsFinite(value);
+    }
+
+    /// <summary>Gets the value currently applied to the configuration or widget for a numeric field.</summary>
+    /// <param name="field">The field key.</param>
+    /// <returns>The applied value.</returns>
+    private double GetAppliedNumericValue(string field) => field switch
+    {
+        nameof(FontSizeText) => _config.FontSize ?? _themeDefaults.FontSize,
+        nameof(OpacityText) => _config.Opacity ?? _themeDefaults.Opacity,
+        nameof(XText) => _widget.X,
+        nameof(YText) => _widget.Y,
+        nameof(WidthText) => _widget.Width,
+        nameof(HeightText) => _widget.Height,
+        nameof(MinimumText) => ReadMinimum(),
+        nameof(MaximumText) => ReadMaximum(),
+        nameof(StepText) => ReadStep(),
+        nameof(InitialValueText) => ReadValue(),
+        nameof(WindowText) => ReadWindow(),
+        nameof(ActionPickerViewModel.LevelText) => _config.Action is VolumeActionConfig volume
+            ? volume.Level
+            : VolumeActionConfig.DefaultLevel,
+        _ => 0,
+    };
+
+    /// <summary>Writes a numeric field's raw text without running its validation/commit setter.</summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="text">The text to display.</param>
+    private void WriteNumericFieldText(string field, string text)
+    {
+        switch (field)
+        {
+            case nameof(FontSizeText):
+                SetField(ref _fontSizeText, text, nameof(FontSizeText));
+                break;
+            case nameof(OpacityText):
+                SetField(ref _opacityText, text, nameof(OpacityText));
+                break;
+            case nameof(XText):
+                SetField(ref _xText, text, nameof(XText));
+                break;
+            case nameof(YText):
+                SetField(ref _yText, text, nameof(YText));
+                break;
+            case nameof(WidthText):
+                SetField(ref _widthText, text, nameof(WidthText));
+                break;
+            case nameof(HeightText):
+                SetField(ref _heightText, text, nameof(HeightText));
+                break;
+            case nameof(MinimumText):
+                SetField(ref _minimumText, text, nameof(MinimumText));
+                break;
+            case nameof(MaximumText):
+                SetField(ref _maximumText, text, nameof(MaximumText));
+                break;
+            case nameof(StepText):
+                SetField(ref _stepText, text, nameof(StepText));
+                break;
+            case nameof(InitialValueText):
+                SetField(ref _initialValueText, text, nameof(InitialValueText));
+                break;
+            case nameof(WindowText):
+                SetField(ref _windowText, text, nameof(WindowText));
+                break;
+            case nameof(ActionPickerViewModel.LevelText):
+                ActionPicker?.SetLevelText(text);
+                break;
+        }
+    }
+
+    /// <summary>Restores the last valid text after an invalid commit, or the applied value's text.</summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="spec">The field spec.</param>
+    private void RestoreLastValidText(string field, NumericFieldSpec spec)
+    {
+        var text = _liveEditLastValidText;
+        if (!NumericFieldMath.TryParse(text, out _))
+        {
+            text = NumericFieldMath.Format(GetAppliedNumericValue(field), spec.Decimals);
+        }
+
+        WriteNumericFieldText(field, text);
+    }
+
+    /// <summary>
+    /// Gets whether an appearance field still shows its inherited theme value (or is empty) and has no
+    /// explicit override, which must stay inherited rather than be pinned by a focus/blur.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="text">The trimmed field text.</param>
+    /// <returns><see langword="true"/> when the field is still inherited.</returns>
+    private bool IsInheritedAppearanceText(string field, string text) => field switch
+    {
+        nameof(FontSizeText) => _config.FontSize is null
+            && (text.Length == 0 || string.Equals(text, ThemeFontSizeText, StringComparison.Ordinal)),
+        nameof(OpacityText) => _config.Opacity is null
+            && (text.Length == 0 || string.Equals(text, ThemeOpacityText, StringComparison.Ordinal)),
+        _ => false,
+    };
+
+    /// <summary>Clears an appearance field's explicit override so the theme default applies.</summary>
+    /// <param name="field">The field key.</param>
+    private void ClearAppearanceOverride(string field)
+    {
+        var recordUndo = !_liveEditUndoRecorded;
+        switch (field)
+        {
+            case nameof(FontSizeText):
+                _config.FontSize = null;
+                MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                break;
+            case nameof(OpacityText):
+                _config.Opacity = null;
+                MarkLiveUndo(recordUndo, _owner.ApplyPropertyEdit(_widget, _config, recordUndo));
+                break;
+        }
+    }
+
+    /// <summary>Gets the display text of an appearance field's inherited theme default.</summary>
+    /// <param name="field">The field key.</param>
+    /// <returns>The theme default text, or an empty string for other fields.</returns>
+    private string ThemeFieldText(string field) => field switch
+    {
+        nameof(FontSizeText) => ThemeFontSizeText,
+        nameof(OpacityText) => ThemeOpacityText,
+        _ => string.Empty,
+    };
+
+    /// <summary>Gets the inline validation message for a numeric field.</summary>
+    /// <param name="field">The field key.</param>
+    /// <returns>The message.</returns>
+    private static string NumberMessage(string field) => field switch
+    {
+        nameof(FontSizeText) => "Font size must be a number.",
+        nameof(OpacityText) => "Opacity must be a number.",
+        nameof(XText) => "Position X must be a number.",
+        nameof(YText) => "Position Y must be a number.",
+        nameof(WidthText) => "Width must be a number.",
+        nameof(HeightText) => "Height must be a number.",
+        nameof(MinimumText) => "Minimum must be a number.",
+        nameof(MaximumText) => "Maximum must be a number.",
+        nameof(StepText) => "Step must be a number.",
+        nameof(InitialValueText) => "Value must be a number.",
+        nameof(WindowText) => "Window must be a number.",
+        nameof(ActionPickerViewModel.LevelText) => "Level must be a whole number between 0 and 100.",
+        _ => "Value must be a number.",
+    };
+
+    /// <summary>
+    /// Gets the smallest legal distance between the minimum and maximum for the current range widget:
+    /// the gauge's validator span, the slider's step, or a minimal positive span for the bar.
+    /// </summary>
+    /// <returns>The required span.</returns>
+    private double RangeGap() => _config switch
+    {
+        GaugeWidgetConfig => ConfigValidator.MinGaugeSpan,
+        SliderWidgetConfig slider => Math.Max(0.001, slider.Step),
+        _ => 0.001,
+    };
+
+    /// <summary>Builds the spec for the slider's initial-value field (range and step from the slider).</summary>
+    /// <returns>The field spec.</returns>
+    private NumericFieldSpec InitialValueSpec()
+    {
+        if (_config is not SliderWidgetConfig slider)
+        {
+            return new NumericFieldSpec(1, 0, 1, 3, AllowNegative: false);
+        }
+
+        return new NumericFieldSpec(
+            Math.Max(0.001, slider.Step),
+            slider.Minimum,
+            slider.Maximum,
+            Decimals: 3,
+            AllowNegative: slider.Minimum < 0);
+    }
+
+    /// <summary>
     /// Gets or sets the opacity override in <c>[0,1]</c> (RF-043/M2-RF-436). While no override exists
     /// the field shows the active theme's inherited default and a value equal to it (or empty) is
     /// kept inherited rather than pinned (M5-RF-543); a finite number is clamped into
@@ -1163,6 +2082,12 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         get => _opacityText;
         set
         {
+            if (IsLiveEditingNumericField(nameof(OpacityText)))
+            {
+                ApplyLiveNumericText(nameof(OpacityText), value);
+                return;
+            }
+
             var text = (value ?? string.Empty).Trim();
 
             // M5-RF-543: see FontSizeText — an inherited field that still shows the theme default
@@ -1256,7 +2181,7 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         CommitConfig();
     }
 
-    private bool TrySetMinimum(double minimum)
+    private bool TrySetMinimum(double minimum, bool commit = true)
     {
         if (!IsFiniteMagnitude(minimum))
         {
@@ -1306,11 +2231,15 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
 
         // An explicit range edit is the user's scale; the auto-adopted rate scale must never undo it.
         _rateScaleAdopted = false;
-        CommitConfig();
+        if (commit)
+        {
+            CommitConfig();
+        }
+
         return true;
     }
 
-    private bool TrySetMaximum(double maximum)
+    private bool TrySetMaximum(double maximum, bool commit = true)
     {
         if (!IsFiniteMagnitude(maximum))
         {
@@ -1360,7 +2289,11 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
 
         // An explicit range edit is the user's scale; the auto-adopted rate scale must never undo it.
         _rateScaleAdopted = false;
-        CommitConfig();
+        if (commit)
+        {
+            CommitConfig();
+        }
+
         return true;
     }
 
@@ -1553,6 +2486,36 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
         ? sparkline.WindowSeconds
         : SparklineWidgetConfig.DefaultWindowSeconds;
 
+    /// <summary>
+    /// Sets the inline error for a numeric field. The volume level lives on the action picker, so
+    /// its feedback goes to the picker's own validation line instead of this editor's.
+    /// </summary>
+    /// <param name="field">The field key.</param>
+    /// <param name="message">The message.</param>
+    private void SetNumericFieldError(string field, string message)
+    {
+        if (string.Equals(field, nameof(ActionPickerViewModel.LevelText), StringComparison.Ordinal))
+        {
+            ActionPicker?.SetError(message);
+            return;
+        }
+
+        SetError(message);
+    }
+
+    /// <summary>Clears the inline error for a numeric field (see <see cref="SetNumericFieldError"/>).</summary>
+    /// <param name="field">The field key.</param>
+    private void ClearNumericFieldError(string field)
+    {
+        if (string.Equals(field, nameof(ActionPickerViewModel.LevelText), StringComparison.Ordinal))
+        {
+            ActionPicker?.SetError(null);
+            return;
+        }
+
+        ClearError();
+    }
+
     private void SetError(string message)
     {
         if (string.Equals(_validationError, message, StringComparison.Ordinal))
@@ -1586,6 +2549,15 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged
 
         field = value;
         OnPropertyChanged(propertyName);
+
+        // The stepper enablement is derived from the field's text, so keep it in sync for every
+        // write path (typing, commit normalization, a step, the empty/invalid branches).
+        if (string.Equals(propertyName, nameof(FontSizeText), StringComparison.Ordinal))
+        {
+            OnPropertyChanged(nameof(CanDecreaseFontSize));
+            OnPropertyChanged(nameof(CanIncreaseFontSize));
+        }
+
         return true;
     }
 

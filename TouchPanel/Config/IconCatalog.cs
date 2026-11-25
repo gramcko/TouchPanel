@@ -7,7 +7,8 @@ namespace TouchPanel.Config;
 /// </summary>
 /// <param name="Id">The stable catalog id persisted in <see cref="WidgetConfig.Icon"/>.</param>
 /// <param name="Glyph">
-/// The font glyph rendered by the templates, or empty for a vector-only entry (brand icons).
+/// The font glyph rendered by the templates, or empty for a vector-only entry (brand or line-art
+/// icons).
 /// </param>
 /// <param name="DisplayName">The touch-friendly name shown in the icon picker.</param>
 /// <param name="PathData">
@@ -15,32 +16,49 @@ namespace TouchPanel.Config;
 /// Both representations are catalog data; <see cref="WidgetIconResolver"/> is the single resolution
 /// entry point that tells callers which one to render.
 /// </param>
+/// <param name="Stroke">
+/// Whether the vector is drawn as line art with a stroked outline (<see langword="true"/>) instead
+/// of a filled shape (<see langword="false"/>, the brand icons).
+/// </param>
+/// <param name="StrokeUnits">
+/// The stroke pen width in the 24-unit viewbox for a stroked vector; <c>2</c> is ~8% of the icon box.
+/// Ignored for filled vectors and glyphs.
+/// </param>
 public sealed record IconOption(
     string Id,
     string Glyph,
     string DisplayName,
-    string? PathData = null)
+    string? PathData = null,
+    bool Stroke = false,
+    double StrokeUnits = 0)
 {
     /// <summary>Gets a value indicating whether the entry has an MDL2 glyph to render.</summary>
     public bool HasGlyph => !string.IsNullOrEmpty(Glyph);
 
     /// <summary>Gets a value indicating whether the entry is a vector path instead of a glyph.</summary>
     public bool IsVector => !string.IsNullOrEmpty(PathData);
+
+    /// <summary>
+    /// Gets the stroke width as a fraction of the 24-unit icon box, or <c>0</c> for a filled vector,
+    /// a glyph, or a vector that did not declare a positive stroke width.
+    /// </summary>
+    public double StrokeFraction => IsVector && Stroke && StrokeUnits > 0 ? StrokeUnits / 24d : 0;
 }
 
 /// <summary>
 /// The bundled, flat icon catalog (RF-043/M2-RF-435). It is an implementer-chosen fixed set of
 /// built-in glyphs shipped with the application; external icon packs (RF-084) are out of scope.
 /// Ids are stable persisted identifiers, so entries must be added, never renamed. The catalog also
-/// carries ten monochrome brand icons as verbatim simple-icons (CC0 1.0) vector paths; those ids are
+/// carries ten monochrome brand icons as verbatim simple-icons (CC0 1.0) vector paths and a small
+/// line-art group (headphones/microphone variants) drawn as stroked 24x24 paths; those ids are
 /// pack-independent because no icon pack overrides them.
 /// </summary>
 public static partial class IconCatalog
 {
     /// <summary>
-    /// The built-in catalog. The count is deliberately small (well within the 1–64 bound of
-    /// M2-RF-435) so the touch picker stays usable; every glyph resolves in the Windows
-    /// "Segoe MDL2 Assets" font.
+    /// The built-in catalog. The documented size bound is 1–96 entries (M2-RF-435); the touch
+    /// picker keeps the full catalog usable because it expands into a scrolling, two-column tile
+    /// list rather than a popup. Every glyph resolves in the Windows "Segoe MDL2 Assets" font.
     /// </summary>
     public static IReadOnlyList<IconOption> BuiltIn { get; } =
     [
@@ -90,6 +108,8 @@ public static partial class IconCatalog
         new("upload", "\uE898", "Upload"),
         new("link", "\uE71B", "Link"),
         .. CreateBrandIcons(),
+        .. CreateActionIcons(),
+        .. CreateLineArtIcons(),
     ];
 
     /// <summary>Looks up a catalog entry by its persisted id.</summary>

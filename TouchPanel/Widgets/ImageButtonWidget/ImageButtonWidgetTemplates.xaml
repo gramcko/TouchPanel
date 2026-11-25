@@ -39,6 +39,8 @@
                     <controls:WidgetIconPresenter x:Name="IconGlyph"
                                                   Glyph="{Binding DisplayGlyph}"
                                                   PathData="{Binding DisplayPathData}"
+                                                  Stroke="{Binding DisplayStroke}"
+                                                  StrokeUnits="{Binding DisplayStrokeUnits}"
                                                   IconSize="{Binding FontSize, TargetNullValue=40}"
                                                   Tag="{DynamicResource PanelForegroundBrush}"
                                                   HorizontalAlignment="Center"

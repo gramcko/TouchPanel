@@ -54,10 +54,19 @@ public sealed class ImageButtonWidgetViewModel : WidgetViewModelBase
     public string DisplayGlyph => IconGlyph ?? (IconPathData is null ? DefaultGlyph : string.Empty);
 
     /// <summary>
-    /// Gets the vector path to render for a configured brand icon, or <see langword="null"/> for a
-    /// glyph/default icon (user-requested brand icons).
+    /// Gets the vector path to render for a configured brand or line-art icon, or
+    /// <see langword="null"/> for a glyph/default icon (user-requested brand and line-art icons).
     /// </summary>
     public string? DisplayPathData => IconPathData;
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="DisplayPathData"/> is line art drawn with a stroked
+    /// outline rather than a filled shape.
+    /// </summary>
+    public bool DisplayStroke => IconStroke;
+
+    /// <summary>Gets the stroke pen width in the 24-unit viewbox for a line-art icon, or <c>0</c>.</summary>
+    public double DisplayStrokeUnits => IconStrokeUnits;
 
     /// <summary>Gets a value indicating whether the icon (or default glyph) is visible.</summary>
     public bool ShowIcon => HasIcon || !(ShowLabel && HasLabel);
@@ -87,6 +96,8 @@ public sealed class ImageButtonWidgetViewModel : WidgetViewModelBase
 
         OnPropertyChanged(nameof(DisplayGlyph));
         OnPropertyChanged(nameof(DisplayPathData));
+        OnPropertyChanged(nameof(DisplayStroke));
+        OnPropertyChanged(nameof(DisplayStrokeUnits));
         OnPropertyChanged(nameof(ShowIcon));
         OnPropertyChanged(nameof(ShowLabelText));
         OnPropertyChanged(nameof(HasLabel));
@@ -99,6 +110,8 @@ public sealed class ImageButtonWidgetViewModel : WidgetViewModelBase
         // projected display properties must follow without a rebuild.
         OnPropertyChanged(nameof(DisplayGlyph));
         OnPropertyChanged(nameof(DisplayPathData));
+        OnPropertyChanged(nameof(DisplayStroke));
+        OnPropertyChanged(nameof(DisplayStrokeUnits));
         OnPropertyChanged(nameof(ShowIcon));
     }
 

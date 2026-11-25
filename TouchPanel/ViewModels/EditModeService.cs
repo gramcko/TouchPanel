@@ -484,6 +484,11 @@ public sealed class EditModeService : INotifyPropertyChanged
             return;
         }
 
+        // User-requested live font-size preview: a selection change or an explicit close while the
+        // field is still focused ends the live session cleanly (the pending value is committed)
+        // instead of leaving a preview without its normalization/error handling.
+        _propertyEditor.EndLiveEdit();
+
         _propertyEditor = null;
         OnPropertyChanged(nameof(PropertyEditor));
         OnPropertyChanged(nameof(HasPropertyEditor));
@@ -497,15 +502,25 @@ public sealed class EditModeService : INotifyPropertyChanged
     /// </summary>
     /// <param name="widget">The edited widget.</param>
     /// <param name="config">The configuration entry the editor mutated.</param>
+    /// <param name="recordUndo">
+    /// When <see langword="true"/> (the default), the edit becomes a new undo step. When
+    /// <see langword="false"/>, the preview is applied and the history's current snapshot is updated
+    /// in place without adding a step, so a multi-keystroke live edit stays one undo group
+    /// (user-requested live font-size preview).
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when an undo step was created (only possible with
+    /// <paramref name="recordUndo"/>); <see langword="false"/> otherwise.
+    /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when an argument is <see langword="null"/>.</exception>
-    internal void ApplyPropertyEdit(WidgetViewModelBase widget, WidgetConfig config)
+    internal bool ApplyPropertyEdit(WidgetViewModelBase widget, WidgetConfig config, bool recordUndo = true)
     {
         ArgumentNullException.ThrowIfNull(widget);
         ArgumentNullException.ThrowIfNull(config);
 
         if (!_isEditMode || !_page.Widgets.Contains(widget))
         {
-            return;
+            return false;
         }
 
         try
@@ -520,7 +535,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         }
 
         SetDirty(true);
-        RecordUndoPoint();
+        return recordUndo ? RecordUndoPoint() : UpdateUndoCurrent();
     }
 
     /// <summary>
@@ -537,6 +552,30 @@ public sealed class EditModeService : INotifyPropertyChanged
     {
         ArgumentNullException.ThrowIfNull(widget);
 
+        if (!IsEditable(widget)
+            || !ApplyGeometry(widget, ClampMove(x, y, widget.Width, widget.Height, _pageWidth, _pageHeight)))
+        {
+            return false;
+        }
+
+        RecordUndoPoint();
+        return true;
+    }
+
+    /// <summary>
+    /// Moves a widget like <see cref="MoveWidget"/> but lets a live numeric-field preview keep one
+    /// undo group: the session's first change records the step and later changes only advance the
+    /// current snapshot. Internal because it exists solely for the property editor.
+    /// </summary>
+    /// <param name="widget">The widget to move.</param>
+    /// <param name="x">The requested horizontal position.</param>
+    /// <param name="y">The requested vertical position.</param>
+    /// <param name="recordUndo">Whether this change may record a new undo step.</param>
+    /// <returns><see langword="true"/> when a new undo step was recorded.</returns>
+    internal bool MoveWidgetLive(WidgetViewModelBase widget, double x, double y, bool recordUndo)
+    {
+        ArgumentNullException.ThrowIfNull(widget);
+
         if (!IsEditable(widget))
         {
             return false;
@@ -547,8 +586,7 @@ public sealed class EditModeService : INotifyPropertyChanged
             return false;
         }
 
-        RecordUndoPoint();
-        return true;
+        return recordUndo ? RecordUndoPoint() : UpdateUndoCurrent();
     }
 
     /// <summary>
@@ -668,6 +706,29 @@ public sealed class EditModeService : INotifyPropertyChanged
 
         RecordUndoPoint();
         return true;
+    }
+
+    /// <summary>
+    /// Resizes a widget like <see cref="ResizeWidget"/> but lets a live numeric-field preview keep
+    /// one undo group: the session's first change records the step and later changes only advance the
+    /// current snapshot. Internal because it exists solely for the property editor.
+    /// </summary>
+    /// <param name="widget">The widget to resize.</param>
+    /// <param name="width">The requested width.</param>
+    /// <param name="height">The requested height.</param>
+    /// <param name="recordUndo">Whether this change may record a new undo step.</param>
+    /// <returns><see langword="true"/> when a new undo step was recorded.</returns>
+    internal bool ResizeWidgetLive(WidgetViewModelBase widget, double width, double height, bool recordUndo)
+    {
+        ArgumentNullException.ThrowIfNull(widget);
+
+        if (!IsEditable(widget)
+            || !ApplyGeometry(widget, ClampResize(widget.X, widget.Y, width, height, _pageWidth, _pageHeight)))
+        {
+            return false;
+        }
+
+        return recordUndo ? RecordUndoPoint() : UpdateUndoCurrent();
     }
 
     /// <summary>
@@ -1569,7 +1630,17 @@ public sealed class EditModeService : INotifyPropertyChanged
     /// <returns><see langword="true"/> when a state was restored.</returns>
     public bool TryUndo()
     {
-        if (!_isEditMode || !_history.TryPeekUndo(out var snapshot))
+        if (!_isEditMode)
+        {
+            return false;
+        }
+
+        // User-requested live font-size preview: finish any in-progress live session before choosing
+        // the snapshot, so Ctrl+Z during typing undoes the whole group instead of racing a pending
+        // commit that would record a point after the peek.
+        _propertyEditor?.EndLiveEdit();
+
+        if (!_history.TryPeekUndo(out var snapshot))
         {
             return false;
         }
@@ -1593,7 +1664,15 @@ public sealed class EditModeService : INotifyPropertyChanged
     /// <returns><see langword="true"/> when a state was restored.</returns>
     public bool TryRedo()
     {
-        if (!_isEditMode || !_history.TryPeekRedo(out var snapshot))
+        if (!_isEditMode)
+        {
+            return false;
+        }
+
+        // Finish an in-progress live session before checking the redo stack (same race as TryUndo).
+        _propertyEditor?.EndLiveEdit();
+
+        if (!_history.TryPeekRedo(out var snapshot))
         {
             return false;
         }
@@ -1641,6 +1720,24 @@ public sealed class EditModeService : INotifyPropertyChanged
 
         NotifyHistoryChanged();
         return true;
+    }
+
+    /// <summary>
+    /// Updates the history's current snapshot in place after an in-group live preview, without
+    /// pushing a new undo step (user-requested live font-size preview). This keeps the group's single
+    /// recorded undo point pointing at the state before the whole group while redo and a following
+    /// group still see the latest applied value.
+    /// </summary>
+    /// <returns><see langword="true"/> when the current snapshot changed.</returns>
+    private bool UpdateUndoCurrent()
+    {
+        if (!_isEditMode)
+        {
+            return false;
+        }
+
+        var snapshot = CapturePageSnapshot();
+        return snapshot is not null && _history.ReplaceCurrent(snapshot);
     }
 
     private void NotifyHistoryChanged()

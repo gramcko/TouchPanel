@@ -1,3 +1,4 @@
+using System.Windows.Media;
 using Serilog;
 using TouchPanel.Actions;
 using TouchPanel.Config;
@@ -65,6 +66,46 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
     /// <summary>Gets a value indicating whether the toggle is currently on.</summary>
     public bool IsOn => _isOn;
 
+    /// <summary>
+    /// Gets the glyph rendered by the toggle's icon presenter: the configured on-state glyph while
+    /// the toggle is on and an on icon is set, otherwise the base icon glyph (user-requested
+    /// addition). With no on icon configured this is always <see cref="WidgetViewModelBase.IconGlyph"/>,
+    /// preserving the previous behaviour.
+    /// </summary>
+    public string? DisplayIconGlyph => UsesAccentIcon ? OnIconGlyph : IconGlyph;
+
+    /// <summary>
+    /// Gets the vector path rendered by the toggle's icon presenter: the on-state vector while the
+    /// toggle is on and an on icon is set, otherwise the base icon vector.
+    /// </summary>
+    public string? DisplayIconPathData => UsesAccentIcon ? OnIconPathData : IconPathData;
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="DisplayIconPathData"/> is line art drawn with a
+    /// stroked outline rather than a filled shape.
+    /// </summary>
+    public bool DisplayIconStroke => UsesAccentIcon ? OnIconStroke : IconStroke;
+
+    /// <summary>Gets the stroke pen width in the 24-unit viewbox for the displayed line-art icon, or <c>0</c>.</summary>
+    public double DisplayIconStrokeUnits => UsesAccentIcon ? OnIconStrokeUnits : IconStrokeUnits;
+
+    /// <summary>Gets a value indicating whether the toggle has an icon (glyph or vector) to render in its current state.</summary>
+    public bool HasDisplayIcon => DisplayIconGlyph is not null || DisplayIconPathData is not null;
+
+    /// <summary>
+    /// Gets a value indicating whether the on-state icon is currently rendered in the accent colour
+    /// (user-requested addition): only while the toggle is on <em>and</em> an on icon is configured.
+    /// </summary>
+    public bool UsesAccentIcon => _isOn && HasOnIcon;
+
+    /// <summary>
+    /// Gets the brush the icon presenter layers over the theme fallback: the per-widget accent
+    /// override while <see cref="UsesAccentIcon"/> is <see langword="true"/>, otherwise the
+    /// per-widget foreground override. A <see langword="null"/> value means the template's
+    /// <c>PanelAccentBrush</c>/<c>PanelForegroundBrush</c> fallback applies.
+    /// </summary>
+    public Brush? DisplayIconBrush => UsesAccentIcon ? AccentBrush : ForegroundBrush;
+
     /// <inheritdoc />
     /// <remarks>
     /// When the persisted-state opt-in or the initial state changes (M2-RF-433), the live on/off
@@ -75,7 +116,24 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
     public override void ApplyConfig(WidgetConfig config)
     {
         ArgumentNullException.ThrowIfNull(config);
+
+        var previousUsesAccent = UsesAccentIcon;
+        var previousAccent = AccentBrush;
+        var previousForeground = ForegroundBrush;
+
         base.ApplyConfig(config);
+
+        // The display brush follows the accent colour only in the on state; raise it when the
+        // underlying effective brush actually changed (a live accent/foreground edit).
+        var brushChanged = previousUsesAccent == UsesAccentIcon
+            ? !BrushEquals(
+                previousUsesAccent ? previousAccent : previousForeground,
+                UsesAccentIcon ? AccentBrush : ForegroundBrush)
+            : true;
+        if (brushChanged)
+        {
+            OnPropertyChanged(nameof(DisplayIconBrush));
+        }
 
         if (config is not ToggleWidgetConfig toggle
             || (_persistState == toggle.PersistState && _initialOn == toggle.InitialOn))
@@ -97,7 +155,7 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
         }
 
         _isOn = nextState;
-        OnPropertyChanged(nameof(IsOn));
+        NotifyOnStateChanged();
     }
 
     /// <inheritdoc />
@@ -110,7 +168,7 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
     protected override Task ActivateCoreAsync(CancellationToken cancellationToken)
     {
         _isOn = !_isOn;
-        OnPropertyChanged(nameof(IsOn));
+        NotifyOnStateChanged();
 
         if (_persistState && !string.IsNullOrEmpty(_pageId))
         {
@@ -119,4 +177,54 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
 
         return ExecuteBoundActionAsync(cancellationToken);
     }
+
+    /// <inheritdoc />
+    protected override string? GetConfiguredOnIconId(WidgetConfig config) =>
+        config is ToggleWidgetConfig toggle ? toggle.OnIcon : null;
+
+    /// <inheritdoc />
+    protected override void OnIconGlyphChanged() => NotifyDisplayIconChanged();
+
+    /// <inheritdoc />
+    protected override void OnOnIconGlyphChanged()
+    {
+        NotifyDisplayIconChanged();
+        OnPropertyChanged(nameof(UsesAccentIcon));
+        OnPropertyChanged(nameof(DisplayIconBrush));
+    }
+
+    /// <summary>
+    /// Raises the on/off state change and, when an on-state icon is configured, the projected
+    /// display-icon properties so the template swaps icon and accent without a rebuild. Without an
+    /// on icon the display icon is identical in both states, so nothing extra is raised.
+    /// </summary>
+    private void NotifyOnStateChanged()
+    {
+        OnPropertyChanged(nameof(IsOn));
+
+        if (!HasOnIcon)
+        {
+            return;
+        }
+
+        NotifyDisplayIconChanged();
+        OnPropertyChanged(nameof(UsesAccentIcon));
+        OnPropertyChanged(nameof(DisplayIconBrush));
+    }
+
+    /// <summary>Raises the display-icon properties (glyph, path, stroke style, and presence).</summary>
+    private void NotifyDisplayIconChanged()
+    {
+        OnPropertyChanged(nameof(DisplayIconGlyph));
+        OnPropertyChanged(nameof(DisplayIconPathData));
+        OnPropertyChanged(nameof(DisplayIconStroke));
+        OnPropertyChanged(nameof(DisplayIconStrokeUnits));
+        OnPropertyChanged(nameof(HasDisplayIcon));
+    }
+
+    private static bool BrushEquals(Brush? first, Brush? second) =>
+        ReferenceEquals(first, second)
+        || (first is SolidColorBrush firstSolid
+            && second is SolidColorBrush secondSolid
+            && firstSolid.Color == secondSolid.Color);
 }

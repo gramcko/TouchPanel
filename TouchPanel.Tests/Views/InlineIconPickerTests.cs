@@ -1,7 +1,9 @@
 using System.Collections;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using System.Windows.Threading;
 using TouchPanel.Config;
 using TouchPanel.Tests.TestSupport;
@@ -59,6 +61,59 @@ public sealed class InlineIconPickerTests
         Assert.Contains("steam", result.IconIds);
         Assert.Contains("vscode", result.IconIds);
         Assert.Contains("github", result.LabelIds);
+
+        // The expanded action group and the line-art vectors are part of the same option list.
+        Assert.Contains("volumeLow", result.IconIds);
+        Assert.Contains("zoomIn", result.LabelIds);
+        Assert.Contains("headphones", result.IconIds);
+        Assert.Contains("headphonesMuted", result.LabelIds);
+        Assert.Contains("microphoneMuted", result.IconIds);
+    }
+
+    [Fact]
+    public async Task ExpandedPicker_RendersStrokePreviewsForLineArtInTwoColumns()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var context = CreateEditorContent(Gauge());
+            var picker = Assert.IsType<InlineIconPicker>(context.Content.FindName("IconPicker"));
+            var header = Assert.IsType<Button>(picker.FindName("PickerHeader"));
+            var tiles = Assert.IsType<ItemsControl>(picker.FindName("PickerTiles"));
+
+            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            context.Host.UpdateLayout();
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            context.Host.UpdateLayout();
+
+            var panel = Assert.IsType<UniformGrid>(tiles.ItemsPanel.LoadContent());
+            var tile = FindVisualDescendants<Button>(tiles).Single(button => Option(button)?.Id == "headphones");
+            var presenter = FindVisualDescendants<WidgetIconPresenter>(tile).Single();
+
+            // The headless test host does not apply the theme brush, so give the tile preview an
+            // explicit foreground and verify the line art picks it up through the presenter.
+            presenter.Foreground = Brushes.Red;
+            var strokePath = Assert.IsType<Path>(presenter.FindName("StrokePath"));
+            var filledPath = Assert.IsType<Path>(presenter.FindName("VectorPath"));
+
+            return new
+            {
+                Columns = panel.Columns,
+                StrokeVisibility = strokePath.Visibility,
+                FilledVisibility = filledPath.Visibility,
+                HasStrokeGeometry = strokePath.Data is not null,
+                HasStrokeBrush = strokePath.Stroke is not null,
+                StrokeThickness = strokePath.StrokeThickness,
+            };
+        });
+
+        Assert.Equal(2, result.Columns);
+        Assert.Equal(Visibility.Visible, result.StrokeVisibility);
+        Assert.Equal(Visibility.Collapsed, result.FilledVisibility);
+        Assert.True(result.HasStrokeGeometry);
+        Assert.True(result.HasStrokeBrush);
+        Assert.True(result.StrokeThickness > 0);
     }
 
     [Fact]

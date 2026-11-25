@@ -84,6 +84,8 @@
                                                   DockPanel.Dock="Left"
                                                   Glyph="{Binding LabelIconGlyph}"
                                                   PathData="{Binding LabelIconPathData}"
+                                                  Stroke="{Binding LabelIconStroke}"
+                                                  StrokeUnits="{Binding LabelIconStrokeUnits}"
                                                   IconSize="{Binding FontSize, TargetNullValue=18}"
                                                   VerticalAlignment="Center"
                                                   ToolTip="{Binding Label}"

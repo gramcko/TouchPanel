@@ -60,6 +60,7 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     private IAppearanceSource? _appearanceSource;
     private string? _iconId;
     private string? _labelIconId;
+    private string? _onIconId;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="WidgetViewModelBase"/> class by projecting the
@@ -133,11 +134,24 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     public string? IconGlyph { get; private set; }
 
     /// <summary>
-    /// Gets the vector path of the configured built-in brand icon, or <see langword="null"/> when the
-    /// id is unset, unknown, or a font glyph (user-requested brand icons). Brand ids are
-    /// pack-independent, so this value is identical for every active icon pack.
+    /// Gets the vector path of the configured built-in brand or line-art icon, or
+    /// <see langword="null"/> when the id is unset, unknown, or a font glyph (user-requested brand and
+    /// line-art icons). Brand/line-art ids are pack-independent, so this value is identical for every
+    /// active icon pack.
     /// </summary>
     public string? IconPathData { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="IconPathData"/> is line art drawn with a stroked
+    /// outline rather than a filled shape (user-requested line-art icons).
+    /// </summary>
+    public bool IconStroke { get; private set; }
+
+    /// <summary>
+    /// Gets the stroke pen width in the 24-unit viewbox for a line-art icon, or <c>0</c> when the
+    /// icon is a glyph or a filled vector.
+    /// </summary>
+    public double IconStrokeUnits { get; private set; }
 
     /// <summary>Gets a value indicating whether a built-in icon (glyph or vector) is configured for this widget.</summary>
     public bool HasIcon => IconGlyph is not null || IconPathData is not null;
@@ -153,10 +167,22 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     public string? LabelIconGlyph { get; private set; }
 
     /// <summary>
-    /// Gets the vector path of the configured label brand icon, or <see langword="null"/> when the
-    /// label icon is unset, unknown, or a font glyph. Brand ids are pack-independent.
+    /// Gets the vector path of the configured label brand or line-art icon, or <see langword="null"/>
+    /// when the label icon is unset, unknown, or a font glyph. Brand/line-art ids are pack-independent.
     /// </summary>
     public string? LabelIconPathData { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="LabelIconPathData"/> is line art drawn with a
+    /// stroked outline rather than a filled shape.
+    /// </summary>
+    public bool LabelIconStroke { get; private set; }
+
+    /// <summary>
+    /// Gets the stroke pen width in the 24-unit viewbox for a line-art label icon, or <c>0</c> when the
+    /// label icon is a glyph or a filled vector.
+    /// </summary>
+    public double LabelIconStrokeUnits { get; private set; }
 
     /// <summary>
     /// Gets a value indicating whether a label icon (glyph or vector) replaces this widget's label
@@ -164,6 +190,38 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     /// otherwise.
     /// </summary>
     public bool HasLabelIcon => LabelIconGlyph is not null || LabelIconPathData is not null;
+
+    /// <summary>
+    /// Gets the glyph of the configured on-state icon (user-requested addition), or
+    /// <see langword="null"/> when unset or when the id is a vector-only brand/line-art icon. It is
+    /// resolved through the same active-pack path as <see cref="IconGlyph"/> and only used by
+    /// widgets that render a distinct on state (the Toggle).
+    /// </summary>
+    public string? OnIconGlyph { get; private set; }
+
+    /// <summary>
+    /// Gets the vector path of the configured on-state icon, or <see langword="null"/> when unset,
+    /// unknown, or a font glyph. Brand/line-art ids are pack-independent.
+    /// </summary>
+    public string? OnIconPathData { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether <see cref="OnIconPathData"/> is line art drawn with a stroked
+    /// outline rather than a filled shape.
+    /// </summary>
+    public bool OnIconStroke { get; private set; }
+
+    /// <summary>
+    /// Gets the stroke pen width in the 24-unit viewbox for a line-art on icon, or <c>0</c> when the
+    /// icon is a glyph or a filled vector.
+    /// </summary>
+    public double OnIconStrokeUnits { get; private set; }
+
+    /// <summary>
+    /// Gets a value indicating whether an on-state icon (glyph or vector) is configured. When
+    /// <see langword="false"/> the widget keeps rendering its base icon in both states.
+    /// </summary>
+    public bool HasOnIcon => OnIconGlyph is not null || OnIconPathData is not null;
 
     /// <summary>Gets the configured background-color override, or <see langword="null"/> for the theme default.</summary>
     public Brush? BackgroundBrush => _backgroundBrush;
@@ -314,6 +372,7 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     {
         _iconId = config.Icon;
         _labelIconId = config.LabelIcon;
+        _onIconId = GetConfiguredOnIconId(config);
         UpdateIconGlyphs();
 
         SetBrush(ref _backgroundBrush, nameof(BackgroundBrush), AppearanceBrushFactory.Create(config.Background));
@@ -369,24 +428,48 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     {
         UpdateIconGlyph();
         UpdateLabelIconGlyph();
+        UpdateOnIconGlyph();
     }
+
+    /// <summary>
+    /// Reads the optional on-state icon id from the config (user-requested addition). The base
+    /// implementation returns <see langword="null"/>; the Toggle overrides it to project
+    /// <see cref="ToggleWidgetConfig.OnIcon"/> through the same resolution path as the base icon.
+    /// </summary>
+    /// <param name="config">The applied widget config; must not be <see langword="null"/>.</param>
+    /// <returns>The configured on-icon id, or <see langword="null"/>.</returns>
+    protected virtual string? GetConfiguredOnIconId(WidgetConfig config) => null;
 
     private void UpdateIconGlyph()
     {
-        var (glyph, path) = ResolveVisual(_iconId);
+        var visual = ResolveVisual(_iconId);
         var changed = false;
 
-        if (!string.Equals(IconGlyph, glyph, StringComparison.Ordinal))
+        if (!string.Equals(IconGlyph, visual.Glyph, StringComparison.Ordinal))
         {
-            IconGlyph = glyph;
+            IconGlyph = visual.Glyph;
             OnPropertyChanged(nameof(IconGlyph));
             changed = true;
         }
 
-        if (!string.Equals(IconPathData, path, StringComparison.Ordinal))
+        if (!string.Equals(IconPathData, visual.PathData, StringComparison.Ordinal))
         {
-            IconPathData = path;
+            IconPathData = visual.PathData;
             OnPropertyChanged(nameof(IconPathData));
+            changed = true;
+        }
+
+        if (IconStroke != visual.Stroke)
+        {
+            IconStroke = visual.Stroke;
+            OnPropertyChanged(nameof(IconStroke));
+            changed = true;
+        }
+
+        if (IconStrokeUnits != visual.StrokeUnits)
+        {
+            IconStrokeUnits = visual.StrokeUnits;
+            OnPropertyChanged(nameof(IconStrokeUnits));
             changed = true;
         }
 
@@ -407,20 +490,34 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     /// </summary>
     private void UpdateLabelIconGlyph()
     {
-        var (glyph, path) = ResolveVisual(_labelIconId);
+        var visual = ResolveVisual(_labelIconId);
         var changed = false;
 
-        if (!string.Equals(LabelIconGlyph, glyph, StringComparison.Ordinal))
+        if (!string.Equals(LabelIconGlyph, visual.Glyph, StringComparison.Ordinal))
         {
-            LabelIconGlyph = glyph;
+            LabelIconGlyph = visual.Glyph;
             OnPropertyChanged(nameof(LabelIconGlyph));
             changed = true;
         }
 
-        if (!string.Equals(LabelIconPathData, path, StringComparison.Ordinal))
+        if (!string.Equals(LabelIconPathData, visual.PathData, StringComparison.Ordinal))
         {
-            LabelIconPathData = path;
+            LabelIconPathData = visual.PathData;
             OnPropertyChanged(nameof(LabelIconPathData));
+            changed = true;
+        }
+
+        if (LabelIconStroke != visual.Stroke)
+        {
+            LabelIconStroke = visual.Stroke;
+            OnPropertyChanged(nameof(LabelIconStroke));
+            changed = true;
+        }
+
+        if (LabelIconStrokeUnits != visual.StrokeUnits)
+        {
+            LabelIconStrokeUnits = visual.StrokeUnits;
+            OnPropertyChanged(nameof(LabelIconStrokeUnits));
             changed = true;
         }
 
@@ -430,13 +527,59 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
         }
     }
 
-    /// <summary>Resolves one icon id to its paired glyph and vector-path values for the current pack.</summary>
-    private (string? Glyph, string? PathData) ResolveVisual(string? iconId)
+    /// <summary>
+    /// Re-resolves the optional on-state icon through the same active-pack path as
+    /// <see cref="IconGlyph"/> (user-requested addition), raising notifications only when the glyph,
+    /// path, or stroke style actually changed. Runs on construction, on every config apply, and on a
+    /// live pack change, so the on icon never needs a rebuild.
+    /// </summary>
+    private void UpdateOnIconGlyph()
+    {
+        var visual = ResolveVisual(_onIconId);
+        var changed = false;
+
+        if (!string.Equals(OnIconGlyph, visual.Glyph, StringComparison.Ordinal))
+        {
+            OnIconGlyph = visual.Glyph;
+            OnPropertyChanged(nameof(OnIconGlyph));
+            changed = true;
+        }
+
+        if (!string.Equals(OnIconPathData, visual.PathData, StringComparison.Ordinal))
+        {
+            OnIconPathData = visual.PathData;
+            OnPropertyChanged(nameof(OnIconPathData));
+            changed = true;
+        }
+
+        if (OnIconStroke != visual.Stroke)
+        {
+            OnIconStroke = visual.Stroke;
+            OnPropertyChanged(nameof(OnIconStroke));
+            changed = true;
+        }
+
+        if (OnIconStrokeUnits != visual.StrokeUnits)
+        {
+            OnIconStrokeUnits = visual.StrokeUnits;
+            OnPropertyChanged(nameof(OnIconStrokeUnits));
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(HasOnIcon));
+        OnOnIconGlyphChanged();
+    }
+
+    /// <summary>Resolves one icon id to its glyph, vector path, and stroke style for the current pack.</summary>
+    private IconVisual ResolveVisual(string? iconId)
     {
         var packId = _appearanceSource?.ActiveIconPackId;
-        return (
-            WidgetIconResolver.ResolveGlyph(packId, iconId),
-            WidgetIconResolver.ResolvePathData(packId, iconId));
+        return WidgetIconResolver.TryResolve(packId, iconId, out var visual) ? visual : default;
     }
 
     /// <summary>
@@ -446,6 +589,15 @@ public abstract class WidgetViewModelBase : INotifyPropertyChanged, IDisposable
     /// notifications without a rebuild.
     /// </summary>
     protected virtual void OnIconGlyphChanged()
+    {
+    }
+
+    /// <summary>
+    /// Called after the optional on-state icon changed (initially, from a live icon-pack swap, or
+    /// from an edit-mode config apply). The base implementation is empty; the Toggle overrides it to
+    /// refresh its projected display-icon properties without a rebuild.
+    /// </summary>
+    protected virtual void OnOnIconGlyphChanged()
     {
     }
 

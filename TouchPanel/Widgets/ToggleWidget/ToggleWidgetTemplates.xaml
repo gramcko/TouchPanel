@@ -37,16 +37,34 @@
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center">
                     <controls:WidgetIconPresenter x:Name="IconGlyph"
-                                                  Glyph="{Binding IconGlyph}"
-                                                  PathData="{Binding IconPathData}"
+                                                  Glyph="{Binding DisplayIconGlyph}"
+                                                  PathData="{Binding DisplayIconPathData}"
+                                                  Stroke="{Binding DisplayIconStroke}"
+                                                  StrokeUnits="{Binding DisplayIconStrokeUnits}"
                                                   IconSize="{Binding FontSize, TargetNullValue=20}"
                                                   Margin="0,0,6,0"
-                                                  Tag="{DynamicResource PanelForegroundBrush}"
                                                   VerticalAlignment="Center"
-                                                  Visibility="{Binding HasIcon, Converter={StaticResource BoolVisibilityConverter}}">
+                                                  Visibility="{Binding HasDisplayIcon, Converter={StaticResource BoolVisibilityConverter}}">
+                        <!--
+                            User-requested on-state icon: the presenter shows the base icon until
+                            the toggle is on with a distinct on icon configured. In that state the
+                            view model's UsesAccentIcon flips Tag to the theme accent brush so the
+                            existing AppearanceForegroundConverter layers the per-widget accent
+                            override over PanelAccentBrush; off state keeps PanelForegroundBrush.
+                        -->
+                        <controls:WidgetIconPresenter.Style>
+                            <Style TargetType="{x:Type controls:WidgetIconPresenter}">
+                                <Setter Property="Tag" Value="{DynamicResource PanelForegroundBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding UsesAccentIcon}" Value="True">
+                                        <Setter Property="Tag" Value="{DynamicResource PanelAccentBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </controls:WidgetIconPresenter.Style>
                         <controls:WidgetIconPresenter.Foreground>
                             <MultiBinding Converter="{StaticResource AppearanceForegroundConverter}">
-                                <Binding Path="ForegroundBrush" />
+                                <Binding Path="DisplayIconBrush" />
                                 <Binding Path="Tag" RelativeSource="{RelativeSource Self}" />
                             </MultiBinding>
                         </controls:WidgetIconPresenter.Foreground>

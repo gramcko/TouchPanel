@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -371,6 +372,221 @@ public sealed class PropertyEditorAppearanceTests
         Assert.NotEqual(ThemeAppearanceDefaults.For(ThemeIds.Dark).Foreground, editor.ForegroundText);
     }
 
+    [Fact]
+    public void FontSizeLiveEdit_PreviewsTheClampedValueWithoutRewritingTheTypedText()
+    {
+        var context = CreateContext(Label("l1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+        var widget = context.Widgets[0];
+
+        editor.BeginLiveEdit();
+        editor.FontSizeText = "1";
+        Assert.Equal(WidgetAppearance.MinFontSize, widget.FontSize);
+        Assert.Equal("1", editor.FontSizeText);
+
+        editor.FontSizeText = "15";
+        Assert.Equal(15, widget.FontSize);
+        Assert.Equal("15", editor.FontSizeText);
+
+        editor.FontSizeText = "120";
+        Assert.Equal(WidgetAppearance.MaxFontSize, widget.FontSize);
+        Assert.Equal("120", editor.FontSizeText);
+
+        editor.CommitLiveEdit();
+        Assert.Equal(WidgetAppearance.MaxFontSize, widget.FontSize);
+        Assert.Equal(WidgetAppearance.MaxFontSize, context.Config.Pages[0].Widgets[0].FontSize);
+        Assert.Equal("96", editor.FontSizeText);
+        Assert.Equal(1, context.Service.UndoDepth);
+    }
+
+    [Fact]
+    public void FontSizeLiveEdit_InvalidIntermediateInputShowsTheErrorAndLeavesTheWidgetUnchanged()
+    {
+        var context = CreateContext(Label("l1", 24));
+        context.EnterSelect();
+        var editor = context.Editor;
+        var widget = context.Widgets[0];
+
+        editor.BeginLiveEdit();
+        editor.FontSizeText = "30";
+        Assert.Equal(30, widget.FontSize);
+
+        editor.FontSizeText = "abc";
+        Assert.True(editor.HasValidationError);
+        Assert.Equal("abc", editor.FontSizeText);
+        Assert.Equal(30, widget.FontSize);
+        Assert.Equal(30, context.Config.Pages[0].Widgets[0].FontSize);
+
+        editor.FontSizeText = "42";
+        Assert.False(editor.HasValidationError);
+        Assert.Equal(42, widget.FontSize);
+    }
+
+    [Fact]
+    public void FontSizeLiveEdit_EmptyIntermediateInputDoesNotClearTheOverride()
+    {
+        var context = CreateContext(Label("l1", 24));
+        context.EnterSelect();
+        var editor = context.Editor;
+        var widget = context.Widgets[0];
+
+        editor.BeginLiveEdit();
+        editor.FontSizeText = string.Empty;
+
+        Assert.Equal(string.Empty, editor.FontSizeText);
+        Assert.Equal(24, widget.FontSize);
+        Assert.Equal(24, context.Config.Pages[0].Widgets[0].FontSize);
+
+        editor.FontSizeText = "18";
+        Assert.False(editor.HasValidationError);
+        Assert.Equal(18, widget.FontSize);
+    }
+
+    [Fact]
+    public void FontSizeLiveEdit_EmptyCommitClearsTheOverrideAndRestoresTheThemeDefaultText()
+    {
+        var context = CreateContext(Label("l1", 24));
+        context.EnterSelect();
+        var editor = context.Editor;
+        var widget = context.Widgets[0];
+
+        editor.BeginLiveEdit();
+        editor.FontSizeText = string.Empty;
+        editor.CommitLiveEdit();
+
+        Assert.Null(context.Config.Pages[0].Widgets[0].FontSize);
+        Assert.Null(widget.FontSize);
+        Assert.Equal(editor.ThemeFontSizeText, editor.FontSizeText);
+        Assert.False(editor.HasValidationError);
+    }
+
+    [Fact]
+    public void FontSizeLiveEdit_FocusBlurOrClearWithoutEditingKeepsTheThemeDefaultInherited()
+    {
+        var context = CreateContext(Label("l1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+        var widget = context.Widgets[0];
+
+        // A pure focus+blur must not pin the displayed theme default as an override.
+        editor.BeginLiveEdit();
+        editor.CommitLiveEdit();
+        Assert.Null(context.Config.Pages[0].Widgets[0].FontSize);
+        Assert.Null(widget.FontSize);
+        Assert.Equal(editor.ThemeFontSizeText, editor.FontSizeText);
+        Assert.False(context.Service.IsDirty);
+
+        // Deleting an inherited field and leaving it also keeps inheritance and stays clean.
+        editor.BeginLiveEdit();
+        editor.FontSizeText = string.Empty;
+        editor.CommitLiveEdit();
+        Assert.Null(context.Config.Pages[0].Widgets[0].FontSize);
+        Assert.Null(widget.FontSize);
+        Assert.Equal(editor.ThemeFontSizeText, editor.FontSizeText);
+        Assert.False(context.Service.IsDirty);
+    }
+
+    [Fact]
+    public void FontSizeLiveEdit_InvalidCommitRestoresTheLastValidTextAndKeepsTheWidgetValid()
+    {
+        var context = CreateContext(Label("l1", 24));
+        context.EnterSelect();
+        var editor = context.Editor;
+        var widget = context.Widgets[0];
+
+        // No valid change yet: the text from before typing is the fallback.
+        editor.BeginLiveEdit();
+        editor.FontSizeText = "abc";
+        editor.CommitLiveEdit();
+        Assert.Equal("24", editor.FontSizeText);
+        Assert.True(editor.HasValidationError);
+        Assert.Equal(24, widget.FontSize);
+
+        // A valid preview followed by an invalid commit restores the last valid raw text.
+        editor.BeginLiveEdit();
+        editor.FontSizeText = "30";
+        editor.FontSizeText = "abc";
+        editor.CommitLiveEdit();
+        Assert.Equal("30", editor.FontSizeText);
+        Assert.True(editor.HasValidationError);
+        Assert.Equal(30, widget.FontSize);
+        Assert.Equal(30, context.Config.Pages[0].Widgets[0].FontSize);
+    }
+
+    [Fact]
+    public void FontSizeLiveEdit_IsOneUndoGroupAndTheNextSessionStartsANewGroup()
+    {
+        var context = CreateContext(Label("l1", 24));
+        context.EnterSelect();
+        var editor = context.Editor;
+
+        Assert.Equal(0, context.Service.UndoDepth);
+
+        editor.BeginLiveEdit();
+        editor.FontSizeText = "1";
+        Assert.Equal(WidgetAppearance.MinFontSize, context.Widgets[0].FontSize);
+        editor.FontSizeText = "15";
+        Assert.Equal(15, context.Widgets[0].FontSize);
+        Assert.Equal(1, context.Service.UndoDepth);
+
+        editor.CommitLiveEdit();
+        Assert.Equal("15", editor.FontSizeText);
+        Assert.Equal(1, context.Service.UndoDepth);
+
+        editor.BeginLiveEdit();
+        editor.FontSizeText = "30";
+        Assert.Equal(30, context.Widgets[0].FontSize);
+        Assert.Equal(2, context.Service.UndoDepth);
+        editor.CommitLiveEdit();
+
+        Assert.True(context.Service.TryUndo());
+        Assert.Equal(15, context.Service.Widgets[0].FontSize);
+        Assert.Equal(15, context.Config.Pages[0].Widgets[0].FontSize);
+        Assert.Equal(1, context.Service.UndoDepth);
+
+        Assert.True(context.Service.TryUndo());
+        Assert.Equal(24, context.Service.Widgets[0].FontSize);
+        Assert.Equal(24, context.Config.Pages[0].Widgets[0].FontSize);
+        Assert.Equal(0, context.Service.UndoDepth);
+    }
+
+    [Fact]
+    public void EditOverlay_AppearanceNumericFieldsShareTheLiveNumericInputBehavior()
+    {
+        var xaml = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "TouchPanel", "Views", "EditOverlay.xaml"));
+
+        var fontSize = ExtractElement(xaml, "FontSizeBox");
+        Assert.Contains("UpdateSourceTrigger=PropertyChanged", fontSize, StringComparison.Ordinal);
+        Assert.Contains("NumericInput.Field=\"FontSizeText\"", fontSize, StringComparison.Ordinal);
+
+        // Opacity adopted the same live-preview lifecycle as the Font size field.
+        var opacity = ExtractElement(xaml, "OpacityBox");
+        Assert.Contains("UpdateSourceTrigger=PropertyChanged", opacity, StringComparison.Ordinal);
+        Assert.Contains("NumericInput.Field=\"OpacityText\"", opacity, StringComparison.Ordinal);
+    }
+
+    private static string ExtractElement(string xaml, string name)
+    {
+        var start = xaml.IndexOf($"x:Name=\"{name}\"", StringComparison.Ordinal);
+        Assert.True(start >= 0, $"The {name} element must exist.");
+        var end = xaml.IndexOf("/>", start, StringComparison.Ordinal);
+        Assert.True(end > start, $"The {name} element must be self-closing.");
+        return xaml[start..end];
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "TouchPanel.sln")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+        return directory!.FullName;
+    }
+
     private static T? FindDescendant<T>(DependencyObject root, Func<T, bool> predicate)
         where T : DependencyObject
     {
@@ -415,7 +631,7 @@ public sealed class PropertyEditorAppearanceTests
         Pages = [new PageConfig { Id = PageId, Widgets = [.. widgets] }],
     };
 
-    private static LabelWidgetConfig Label(string id) => new()
+    private static LabelWidgetConfig Label(string id, double? fontSize = null) => new()
     {
         Id = id,
         X = 0,
@@ -423,6 +639,7 @@ public sealed class PropertyEditorAppearanceTests
         Width = 200,
         Height = 100,
         Label = id,
+        FontSize = fontSize,
     };
 
     private sealed record TestContext(

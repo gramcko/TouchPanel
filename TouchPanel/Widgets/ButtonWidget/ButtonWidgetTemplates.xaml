@@ -38,6 +38,8 @@
                     <controls:WidgetIconPresenter x:Name="IconGlyph"
                                                   Glyph="{Binding IconGlyph}"
                                                   PathData="{Binding IconPathData}"
+                                                  Stroke="{Binding IconStroke}"
+                                                  StrokeUnits="{Binding IconStrokeUnits}"
                                                   IconSize="{Binding FontSize, TargetNullValue=20}"
                                                   Margin="0,0,6,0"
                                                   Tag="{DynamicResource PanelForegroundBrush}"

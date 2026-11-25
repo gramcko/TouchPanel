@@ -5,6 +5,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media.Animation;
 using TouchPanel.ViewModels;
+using TouchPanel.ViewModels.Edit;
 using TouchPanel.ViewModels.Settings;
 
 namespace TouchPanel.Views;
@@ -566,4 +567,5 @@ public partial class EditOverlay : UserControl
     /// <param name="sender">The Close button at the end of the edit menu.</param>
     /// <param name="e">The click event data.</param>
     private void OnClosePropertyEditorClick(object sender, RoutedEventArgs e) => Service?.ClosePropertyEditor();
+
 }

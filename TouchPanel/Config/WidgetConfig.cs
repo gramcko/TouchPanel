@@ -172,6 +172,15 @@ public sealed class ToggleWidgetConfig : WidgetConfig
     /// in <c>state.json</c>, never in <c>panel.json</c>.
     /// </summary>
     public bool PersistState { get; set; }
+
+    /// <summary>
+    /// Gets or sets the id of the built-in icon shown while the toggle is <em>on</em>, rendered in
+    /// the widget's accent colour, or <see langword="null"/> to keep rendering <see cref="WidgetConfig.Icon"/>
+    /// in both states (user-requested addition). The value must be one of
+    /// <see cref="IconCatalog.BuiltIn"/>; validation clears an unknown id with a warning. Additive
+    /// and optional: its absence leaves older files unchanged (no schema bump).
+    /// </summary>
+    public string? OnIcon { get; set; }
 }
 
 /// <summary>A Label widget (RF-033): displays the configured <see cref="WidgetConfig.Label"/> text.</summary>

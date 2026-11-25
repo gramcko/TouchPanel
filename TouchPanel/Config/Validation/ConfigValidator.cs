@@ -540,6 +540,18 @@ public static class ConfigValidator
                 $"Widget '{widget.Id}' referenced a label icon that is not in the built-in catalog; no label icon is shown."));
         }
 
+        // User-requested addition: the toggle's on-state icon. It is additive, so a missing/null
+        // value stays null (the base icon renders in both states) and only an unknown id is cleared.
+        if (widget is ToggleWidgetConfig toggle
+            && toggle.OnIcon is not null
+            && !IconCatalog.TryGet(toggle.OnIcon, out _))
+        {
+            toggle.OnIcon = null;
+            diagnostics.Add(ConfigDiagnostic.Warning(
+                "config.widget.onIcon",
+                $"Widget '{widget.Id}' referenced an on icon that is not in the built-in catalog; the base icon is shown in both states."));
+        }
+
         NormalizeColor("foreground", widget.Foreground, value => widget.Foreground = value, widget, diagnostics);
         NormalizeColor("background", widget.Background, value => widget.Background = value, widget, diagnostics);
         NormalizeColor("accent", widget.Accent, value => widget.Accent = value, widget, diagnostics);
