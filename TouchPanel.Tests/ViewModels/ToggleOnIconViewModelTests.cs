@@ -1,3 +1,4 @@
+using System.Windows.Media;
 using TouchPanel.Config;
 using TouchPanel.Services.Appearance;
 using TouchPanel.ViewModels;
@@ -7,8 +8,9 @@ namespace TouchPanel.Tests.ViewModels;
 /// <summary>
 /// User-requested toggle on-state icon: the toggle projects one display-icon surface that follows
 /// <see cref="ToggleWidgetViewModel.IsOn"/>. With no on icon it mirrors the base icon exactly; with
-/// one it swaps glyph/vector + stroke and uses the accent flag only while on. It re-resolves on
-/// config apply and live icon-pack changes without a rebuild.
+/// one it swaps glyph/vector + stroke and uses the configured on-icon colour (or the contrasting
+/// theme default) only while on. It re-resolves on config apply and live icon-pack changes without
+/// a rebuild.
 /// </summary>
 public sealed class ToggleOnIconViewModelTests
 {
@@ -18,7 +20,7 @@ public sealed class ToggleOnIconViewModelTests
         var viewModel = new ToggleWidgetViewModel(CreateConfig(initialOn: false, icon: "power"));
 
         Assert.False(viewModel.HasOnIcon);
-        Assert.False(viewModel.UsesAccentIcon);
+        Assert.False(viewModel.UsesOnIcon);
         Assert.Equal(viewModel.IconGlyph, viewModel.DisplayIconGlyph);
         Assert.Equal(viewModel.IconPathData, viewModel.DisplayIconPathData);
         Assert.True(viewModel.HasDisplayIcon);
@@ -26,7 +28,7 @@ public sealed class ToggleOnIconViewModelTests
         await viewModel.ActivateAsync();
 
         Assert.True(viewModel.IsOn);
-        Assert.False(viewModel.UsesAccentIcon);
+        Assert.False(viewModel.UsesOnIcon);
         Assert.Equal(viewModel.IconGlyph, viewModel.DisplayIconGlyph);
         Assert.Null(viewModel.DisplayIconBrush);
         Assert.Equal(IconCatalog.GlyphFor("power"), viewModel.DisplayIconGlyph);
@@ -42,7 +44,7 @@ public sealed class ToggleOnIconViewModelTests
 
         Assert.Contains(nameof(ToggleWidgetViewModel.IsOn), changes);
         Assert.DoesNotContain(nameof(ToggleWidgetViewModel.DisplayIconGlyph), changes);
-        Assert.DoesNotContain(nameof(ToggleWidgetViewModel.UsesAccentIcon), changes);
+        Assert.DoesNotContain(nameof(ToggleWidgetViewModel.UsesOnIcon), changes);
     }
 
     [Fact]
@@ -52,13 +54,13 @@ public sealed class ToggleOnIconViewModelTests
             CreateConfig(initialOn: false, icon: "power", onIcon: "star"));
 
         Assert.True(viewModel.HasOnIcon);
-        Assert.False(viewModel.UsesAccentIcon);
+        Assert.False(viewModel.UsesOnIcon);
         Assert.Equal(IconCatalog.GlyphFor("power"), viewModel.DisplayIconGlyph);
 
         await viewModel.ActivateAsync();
 
         Assert.True(viewModel.IsOn);
-        Assert.True(viewModel.UsesAccentIcon);
+        Assert.True(viewModel.UsesOnIcon);
         Assert.True(viewModel.HasDisplayIcon);
         Assert.Equal(IconCatalog.GlyphFor("star"), viewModel.DisplayIconGlyph);
         Assert.Null(viewModel.DisplayIconPathData);
@@ -67,7 +69,7 @@ public sealed class ToggleOnIconViewModelTests
         await viewModel.ActivateAsync();
 
         Assert.False(viewModel.IsOn);
-        Assert.False(viewModel.UsesAccentIcon);
+        Assert.False(viewModel.UsesOnIcon);
         Assert.Equal(IconCatalog.GlyphFor("power"), viewModel.DisplayIconGlyph);
     }
 
@@ -78,7 +80,7 @@ public sealed class ToggleOnIconViewModelTests
             CreateConfig(initialOn: true, icon: "power", onIcon: "microphoneMuted"));
 
         Assert.True(viewModel.IsOn);
-        Assert.True(viewModel.UsesAccentIcon);
+        Assert.True(viewModel.UsesOnIcon);
         Assert.Null(viewModel.DisplayIconGlyph);
         Assert.Equal(IconCatalog.PathDataFor("microphoneMuted"), viewModel.DisplayIconPathData);
         Assert.True(viewModel.DisplayIconStroke);
@@ -87,7 +89,7 @@ public sealed class ToggleOnIconViewModelTests
         viewModel.ApplyConfig(CreateConfig(initialOn: false, icon: "power", onIcon: "microphoneMuted"));
 
         Assert.False(viewModel.IsOn);
-        Assert.False(viewModel.UsesAccentIcon);
+        Assert.False(viewModel.UsesOnIcon);
         Assert.Equal(IconCatalog.GlyphFor("power"), viewModel.DisplayIconGlyph);
         Assert.Null(viewModel.DisplayIconPathData);
         Assert.False(viewModel.DisplayIconStroke);
@@ -100,7 +102,7 @@ public sealed class ToggleOnIconViewModelTests
         var viewModel = new ToggleWidgetViewModel(
             CreateConfig(initialOn: true, icon: "power", onIcon: "steam"));
 
-        Assert.True(viewModel.UsesAccentIcon);
+        Assert.True(viewModel.UsesOnIcon);
         Assert.Null(viewModel.DisplayIconGlyph);
         Assert.Equal(IconCatalog.PathDataFor("steam"), viewModel.DisplayIconPathData);
         Assert.False(viewModel.DisplayIconStroke);
@@ -109,22 +111,22 @@ public sealed class ToggleOnIconViewModelTests
     }
 
     [Fact]
-    public void AccentFlag_IsOnlySetWhileOnWithAnOnIcon()
+    public void OnIconFlag_IsOnlySetWhileOnWithAnOnIcon()
     {
         var withoutOnIcon = new ToggleWidgetViewModel(CreateConfig(initialOn: true, icon: "power"));
-        Assert.False(withoutOnIcon.UsesAccentIcon);
+        Assert.False(withoutOnIcon.UsesOnIcon);
 
         var withOnIconOff = new ToggleWidgetViewModel(
             CreateConfig(initialOn: false, icon: "power", onIcon: "star"));
-        Assert.False(withOnIconOff.UsesAccentIcon);
+        Assert.False(withOnIconOff.UsesOnIcon);
 
         var withOnIconOn = new ToggleWidgetViewModel(
             CreateConfig(initialOn: true, icon: "power", onIcon: "star"));
-        Assert.True(withOnIconOn.UsesAccentIcon);
+        Assert.True(withOnIconOn.UsesOnIcon);
     }
 
     [Fact]
-    public void DisplayIconBrush_UsesTheAccentOnlyWhileOnAndFallsBackToForeground()
+    public void DisplayIconBrush_UsesTheOnIconColourOnlyWhileOnAndFallsBackToForeground()
     {
         var viewModel = new ToggleWidgetViewModel(new ToggleWidgetConfig
         {
@@ -133,8 +135,9 @@ public sealed class ToggleOnIconViewModelTests
             Height = 50,
             Icon = "power",
             OnIcon = "star",
+            OnIconColor = "#FF00FF00",
             InitialOn = false,
-            Accent = "#FF00FF00",
+            Accent = "#FFFF00FF",
             Foreground = "#FF112233",
         });
 
@@ -147,18 +150,54 @@ public sealed class ToggleOnIconViewModelTests
             Height = 50,
             Icon = "power",
             OnIcon = "star",
+            OnIconColor = "#FF00FF00",
             InitialOn = true,
-            Accent = "#FF00FF00",
+            Accent = "#FFFF00FF",
             Foreground = "#FF112233",
         });
 
         Assert.True(viewModel.IsOn);
-        Assert.Same(viewModel.AccentBrush, viewModel.DisplayIconBrush);
+        Assert.Same(viewModel.OnIconBrush, viewModel.DisplayIconBrush);
+        Assert.NotSame(viewModel.AccentBrush, viewModel.DisplayIconBrush);
 
-        // No per-widget accent override: null lets the template use PanelAccentBrush.
+        // No per-widget on-icon colour: null lets the template use the contrasting PanelBackgroundBrush.
         var plain = new ToggleWidgetViewModel(
             CreateConfig(initialOn: true, icon: "power", onIcon: "star"));
+        Assert.Null(plain.OnIconBrush);
         Assert.Null(plain.DisplayIconBrush);
+    }
+
+    [Fact]
+    public void OnIconColourChange_AppliesLiveAndNotifiesTheDisplayBrush()
+    {
+        var viewModel = new ToggleWidgetViewModel(
+            CreateConfig(initialOn: true, icon: "power", onIcon: "star"));
+        var changes = RecordChanges(viewModel);
+
+        Assert.Null(viewModel.OnIconBrush);
+        Assert.Null(viewModel.DisplayIconBrush);
+
+        viewModel.ApplyConfig(new ToggleWidgetConfig
+        {
+            Id = "toggle-1",
+            Width = 100,
+            Height = 50,
+            Icon = "power",
+            OnIcon = "star",
+            OnIconColor = "#FF445566",
+            InitialOn = true,
+        });
+
+        Assert.Equal(Color.FromRgb(0x44, 0x55, 0x66), (viewModel.OnIconBrush as SolidColorBrush)?.Color);
+        Assert.Same(viewModel.OnIconBrush, viewModel.DisplayIconBrush);
+        Assert.Contains(nameof(ToggleWidgetViewModel.OnIconBrush), changes);
+        Assert.Contains(nameof(ToggleWidgetViewModel.DisplayIconBrush), changes);
+
+        // Clearing the colour returns to the theme default (null), still in the on state.
+        viewModel.ApplyConfig(CreateConfig(initialOn: true, icon: "power", onIcon: "star"));
+
+        Assert.Null(viewModel.OnIconBrush);
+        Assert.Null(viewModel.DisplayIconBrush);
     }
 
     [Fact]
@@ -194,10 +233,10 @@ public sealed class ToggleOnIconViewModelTests
         viewModel.ApplyConfig(CreateConfig(initialOn: true, icon: "power", onIcon: null));
 
         Assert.False(viewModel.HasOnIcon);
-        Assert.False(viewModel.UsesAccentIcon);
+        Assert.False(viewModel.UsesOnIcon);
         Assert.Equal(IconCatalog.GlyphFor("power"), viewModel.DisplayIconGlyph);
         Assert.Contains(nameof(ToggleWidgetViewModel.HasOnIcon), changes);
-        Assert.Contains(nameof(ToggleWidgetViewModel.UsesAccentIcon), changes);
+        Assert.Contains(nameof(ToggleWidgetViewModel.UsesOnIcon), changes);
     }
 
     [Fact]
@@ -213,7 +252,7 @@ public sealed class ToggleOnIconViewModelTests
         Assert.DoesNotContain(nameof(ToggleWidgetViewModel.DisplayIconPathData), changes);
         Assert.DoesNotContain(nameof(ToggleWidgetViewModel.HasDisplayIcon), changes);
         Assert.DoesNotContain(nameof(ToggleWidgetViewModel.HasOnIcon), changes);
-        Assert.DoesNotContain(nameof(ToggleWidgetViewModel.UsesAccentIcon), changes);
+        Assert.DoesNotContain(nameof(ToggleWidgetViewModel.UsesOnIcon), changes);
         Assert.DoesNotContain(nameof(ToggleWidgetViewModel.DisplayIconBrush), changes);
     }
 

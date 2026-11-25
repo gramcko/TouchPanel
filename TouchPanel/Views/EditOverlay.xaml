@@ -906,33 +906,50 @@
 
                                     <!--
                                         User-requested addition: toggles only. An optional second
-                                        icon rendered in the accent colour while the toggle is on
-                                        (for example a muted microphone). "None" keeps the base
-                                        icon in both states.
+                                        icon rendered while the toggle is on (for example a muted
+                                        microphone) plus its optional colour. "None" keeps the base
+                                        icon in both states / the contrasting theme default colour.
                                     -->
                                     <StackPanel x:Name="OnIconSection"
                                                 Focusable="False"
                                                 Visibility="{Binding SupportsOnIcon, Converter={StaticResource EditModeVisibilityConverter}}">
-                                        <TextBlock Text="On icon (accent)" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                        <TextBlock Text="On icon (on state)" Style="{StaticResource EditPropertySectionLabelStyle}" />
                                         <controls:InlineIconPicker x:Name="OnIconPicker"
                                                                    ItemsSource="{Binding OnIconOptions}"
                                                                    SelectedItem="{Binding SelectedOnIcon, Mode=TwoWay}" />
+
+                                        <TextBlock Text="On icon colour" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                        <controls:InlineColorPicker x:Name="OnIconColorPicker"
+                                                                    SelectedHex="{Binding OnIconColorText, Mode=TwoWay}"
+                                                                    IsInherited="{Binding IsOnIconColorInherited, Mode=OneWay}"
+                                                                    AllowNone="True"
+                                                                    NoneText="Inherited"
+                                                                    AutomationProperties.Name="On icon colour" />
                                     </StackPanel>
 
-                                    <TextBlock Text="Foreground (#RRGGBB)" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                    <TextBox x:Name="ForegroundBox"
-                                             Text="{Binding ForegroundText, UpdateSourceTrigger=LostFocus}"
-                                             Style="{StaticResource EditPropertyTextBoxStyle}" />
+                                    <TextBlock Text="Foreground" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <controls:InlineColorPicker x:Name="ForegroundPicker"
+                                                                SelectedHex="{Binding ForegroundText, Mode=TwoWay}"
+                                                                IsInherited="{Binding IsForegroundInherited, Mode=OneWay}"
+                                                                AllowNone="True"
+                                                                NoneText="Inherited"
+                                                                AutomationProperties.Name="Foreground" />
 
-                                    <TextBlock Text="Background (#RRGGBB)" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                    <TextBox x:Name="BackgroundBox"
-                                             Text="{Binding BackgroundText, UpdateSourceTrigger=LostFocus}"
-                                             Style="{StaticResource EditPropertyTextBoxStyle}" />
+                                    <TextBlock Text="Background" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <controls:InlineColorPicker x:Name="BackgroundPicker"
+                                                                SelectedHex="{Binding BackgroundText, Mode=TwoWay}"
+                                                                IsInherited="{Binding IsBackgroundInherited, Mode=OneWay}"
+                                                                AllowNone="True"
+                                                                NoneText="Inherited"
+                                                                AutomationProperties.Name="Background" />
 
-                                    <TextBlock Text="Accent (#RRGGBB)" Style="{StaticResource EditPropertySectionLabelStyle}" />
-                                    <TextBox x:Name="AccentBox"
-                                             Text="{Binding AccentText, UpdateSourceTrigger=LostFocus}"
-                                             Style="{StaticResource EditPropertyTextBoxStyle}" />
+                                    <TextBlock Text="Accent" Style="{StaticResource EditPropertySectionLabelStyle}" />
+                                    <controls:InlineColorPicker x:Name="AccentPicker"
+                                                                SelectedHex="{Binding AccentText, Mode=TwoWay}"
+                                                                IsInherited="{Binding IsAccentInherited, Mode=OneWay}"
+                                                                AllowNone="True"
+                                                                NoneText="Inherited"
+                                                                AutomationProperties.Name="Accent" />
 
                                     <!--
                                         User-requested live preview and integrated steppers: every

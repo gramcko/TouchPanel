@@ -144,6 +144,107 @@ public sealed class ToggleOnIconConfigTests
         Assert.DoesNotContain(unsetDiagnostics, diagnostic => diagnostic.Code == "config.widget.onIcon");
     }
 
+    [Fact]
+    public void OnIconColor_DefaultsToNullAndRoundTripsThroughJson()
+    {
+        var config = CreateConfig(new ToggleWidgetConfig
+        {
+            Id = "toggle-1",
+            Width = 100,
+            Height = 50,
+            Icon = "power",
+            OnIcon = "star",
+            OnIconColor = "#AABBCC",
+            Action = new MuteActionConfig(),
+        });
+
+        var json = JsonSerializer.Serialize(config, ConfigJson.Options);
+
+        Assert.Contains("\"onIconColor\": \"#AABBCC\"", json);
+        Assert.Contains("\"schemaVersion\": 4", json);
+
+        var restored = JsonSerializer.Deserialize<PanelConfig>(json, ConfigJson.Options)!;
+        var toggle = Assert.IsType<ToggleWidgetConfig>(restored.Pages[0].Widgets[0]);
+
+        Assert.Equal(4, restored.SchemaVersion);
+        Assert.Equal("#AABBCC", toggle.OnIconColor);
+    }
+
+    [Fact]
+    public void OnIconColor_IsNullWhenAbsentFromOlderJson()
+    {
+        const string json = """
+            {
+              "schemaVersion": 4,
+              "activePageId": "main",
+              "pages": [
+                {
+                  "id": "main",
+                  "widgets": [
+                    {
+                      "type": "toggle",
+                      "id": "toggle-1",
+                      "x": 0,
+                      "y": 0,
+                      "width": 100,
+                      "height": 50,
+                      "icon": "power",
+                      "onIcon": "star"
+                    }
+                  ]
+                }
+              ]
+            }
+            """;
+
+        var restored = JsonSerializer.Deserialize<PanelConfig>(json, ConfigJson.Options)!;
+        var toggle = Assert.IsType<ToggleWidgetConfig>(restored.Pages[0].Widgets[0]);
+
+        Assert.Null(toggle.OnIconColor);
+    }
+
+    [Theory]
+    [InlineData("#aabbcc", "#AABBCC")]
+    [InlineData("#80112233", "#80112233")]
+    public void Validation_NormalizesAValidOnIconColor(string configured, string expected)
+    {
+        var toggle = new ToggleWidgetConfig
+        {
+            Id = "toggle-1",
+            Width = 100,
+            Height = 50,
+            Icon = "power",
+            OnIcon = "star",
+            OnIconColor = configured,
+            Action = new MuteActionConfig(),
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(toggle));
+
+        Assert.Equal(expected, toggle.OnIconColor);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Code == "config.widget.appearance.onIconColor");
+    }
+
+    [Fact]
+    public void Validation_ClearsAnInvalidOnIconColorWithAWarning()
+    {
+        var toggle = new ToggleWidgetConfig
+        {
+            Id = "toggle-1",
+            Width = 100,
+            Height = 50,
+            Icon = "power",
+            OnIcon = "star",
+            OnIconColor = "not-a-colour",
+            Action = new MuteActionConfig(),
+        };
+
+        var diagnostics = ConfigValidator.Validate(CreateConfig(toggle));
+
+        Assert.Null(toggle.OnIconColor);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Code == "config.widget.appearance.onIconColor");
+    }
+
     private static PanelConfig CreateConfig(params WidgetConfig[] widgets) => new()
     {
         SchemaVersion = PanelConfig.CurrentSchemaVersion,

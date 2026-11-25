@@ -174,13 +174,22 @@ public sealed class ToggleWidgetConfig : WidgetConfig
     public bool PersistState { get; set; }
 
     /// <summary>
-    /// Gets or sets the id of the built-in icon shown while the toggle is <em>on</em>, rendered in
-    /// the widget's accent colour, or <see langword="null"/> to keep rendering <see cref="WidgetConfig.Icon"/>
-    /// in both states (user-requested addition). The value must be one of
-    /// <see cref="IconCatalog.BuiltIn"/>; validation clears an unknown id with a warning. Additive
-    /// and optional: its absence leaves older files unchanged (no schema bump).
+    /// Gets or sets the id of the built-in icon shown while the toggle is <em>on</em>, or
+    /// <see langword="null"/> to keep rendering <see cref="WidgetConfig.Icon"/> in both states
+    /// (user-requested addition). The value must be one of <see cref="IconCatalog.BuiltIn"/>;
+    /// validation clears an unknown id with a warning. Additive and optional: its absence leaves
+    /// older files unchanged (no schema bump).
     /// </summary>
     public string? OnIcon { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional colour of the on-state icon as <c>#RRGGBB</c> or
+    /// <c>#AARRGGBB</c>, or <see langword="null"/> to use the contrasting theme default
+    /// (<c>PanelBackgroundBrush</c>) so the icon stays visible on the accent-filled active surface
+    /// (user-requested addition). Validation normalizes a valid value and clears an invalid one with
+    /// a warning. Additive and optional: its absence leaves older files unchanged (no schema bump).
+    /// </summary>
+    public string? OnIconColor { get; set; }
 }
 
 /// <summary>A Label widget (RF-033): displays the configured <see cref="WidgetConfig.Label"/> text.</summary>

@@ -5,6 +5,7 @@ using TouchPanel.Config;
 using TouchPanel.Services.Config;
 using TouchPanel.Tests.TestSupport;
 using TouchPanel.ViewModels.Settings;
+using TouchPanel.Views.Controls;
 using TouchPanel.Views.Settings;
 
 namespace TouchPanel.Tests.Views;
@@ -27,7 +28,8 @@ public sealed class PagesEditorBackgroundViewTests
             var view = new PagesEditorView { DataContext = context.ViewModel };
             view.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
-            var color = Assert.IsType<TextBox>(view.FindName("BackgroundColorBox"));
+            var color = Assert.IsType<InlineColorPicker>(view.FindName("PageBackgroundColorPicker"));
+            var colorHeader = Assert.IsType<Button>(color.FindName("PickerHeader"));
             var image = Assert.IsType<TextBox>(view.FindName("BackgroundImageBox"));
             var apply = Assert.IsType<Button>(view.FindName("ApplyBackgroundButton"));
             var browse = Assert.IsType<Button>(view.FindName("BrowseBackgroundImageButton"));
@@ -36,7 +38,7 @@ public sealed class PagesEditorBackgroundViewTests
 
             return new
             {
-                ColorHeight = color.MinHeight,
+                ColorHeight = colorHeader.MinHeight,
                 ImageHeight = image.MinHeight,
                 ApplyHeight = apply.MinHeight,
                 BrowseHeight = browse.MinHeight,
@@ -47,8 +49,9 @@ public sealed class PagesEditorBackgroundViewTests
                 ClearColorCommand = ReferenceEquals(clearColor.Command, context.ViewModel.ClearBackgroundColorCommand),
                 ClearImageCommand = ReferenceEquals(clearImage.Command, context.ViewModel.ClearBackgroundImageCommand),
                 Enabled = apply.IsEnabled,
-                ColorText = color.Text,
+                ColorText = color.SelectedHex,
                 ImageText = image.Text,
+                ColorCommand = ReferenceEquals(color.CommitCommand, context.ViewModel.ApplyBackgroundCommand),
             };
         });
 
@@ -62,6 +65,7 @@ public sealed class PagesEditorBackgroundViewTests
         Assert.True(result.BrowseCommand);
         Assert.True(result.ClearColorCommand);
         Assert.True(result.ClearImageCommand);
+        Assert.True(result.ColorCommand, "Selecting a page-background colour must run the apply pipeline.");
         Assert.True(result.Enabled);
         Assert.Equal(string.Empty, result.ColorText);
         Assert.Equal(string.Empty, result.ImageText);
@@ -83,8 +87,8 @@ public sealed class PagesEditorBackgroundViewTests
 
             context.ViewModel.SelectPage("second");
             view.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            var color = Assert.IsType<TextBox>(view.FindName("BackgroundColorBox"));
-            var loaded = color.Text;
+            var color = Assert.IsType<InlineColorPicker>(view.FindName("PageBackgroundColorPicker"));
+            var loaded = color.SelectedHex;
 
             context.ViewModel.BackgroundColor = "#102030";
             var applied = context.ViewModel.ApplyBackgroundAsync().GetAwaiter().GetResult();
@@ -93,7 +97,7 @@ public sealed class PagesEditorBackgroundViewTests
             return (
                 Loaded: loaded,
                 Applied: applied,
-                TextAfterApply: color.Text,
+                TextAfterApply: color.SelectedHex,
                 Saved: context.Config.Pages[1].Background);
         });
 

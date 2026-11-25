@@ -143,8 +143,20 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     public string BackgroundColor
     {
         get => _backgroundColor;
-        set => SetProperty(ref _backgroundColor, value ?? string.Empty);
+        set
+        {
+            if (SetProperty(ref _backgroundColor, value ?? string.Empty))
+            {
+                OnPropertyChanged(nameof(IsPageBackgroundColorInherited));
+            }
+        }
     }
+
+    /// <summary>
+    /// Gets a value indicating whether the selected page has no background colour draft, so the
+    /// inline picker's collapsed header shows "None" (user-requested colour picker).
+    /// </summary>
+    public bool IsPageBackgroundColorInherited => string.IsNullOrWhiteSpace(_backgroundColor);
 
     /// <summary>
     /// Gets or sets the background image path draft for the selected page (absolute; blank clears
@@ -1017,6 +1029,7 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(CanMoveSelectedDown));
         OnPropertyChanged(nameof(CanEditBackground));
         OnPropertyChanged(nameof(BackgroundColor));
+        OnPropertyChanged(nameof(IsPageBackgroundColorInherited));
         OnPropertyChanged(nameof(BackgroundImagePath));
     }
 

@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using TouchPanel.Actions;
 using TouchPanel.Config;
 using TouchPanel.Theme;
 using TouchPanel.Tests.TestSupport;
@@ -131,6 +132,116 @@ public sealed class PropertyEditorAppearanceTests
 
         Assert.Null(context.Config.Pages[0].Widgets[0].Foreground);
         Assert.Null(widget.ForegroundBrush);
+    }
+
+    [Fact]
+    public void ColorEdit_RaisesTheInheritanceCompanionForThePickerHeader()
+    {
+        var context = CreateContext(Label("l1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+        var changes = new List<string>();
+        editor.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName is { } name)
+            {
+                changes.Add(name);
+            }
+        };
+
+        Assert.True(editor.IsForegroundInherited);
+
+        editor.ForegroundText = "#112233";
+
+        Assert.False(editor.IsForegroundInherited);
+        Assert.Contains(nameof(PropertyEditorViewModel.IsForegroundInherited), changes);
+
+        editor.ForegroundText = string.Empty;
+
+        Assert.True(editor.IsForegroundInherited);
+        Assert.Contains(nameof(PropertyEditorViewModel.IsForegroundInherited), changes);
+    }
+
+    [Fact]
+    public void ColorEdit_IsOneUndoStepPerAppliedSelection()
+    {
+        var context = CreateContext(Label("l1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+
+        Assert.Equal(0, context.Service.UndoDepth);
+
+        editor.ForegroundText = "#112233";
+        Assert.Equal(1, context.Service.UndoDepth);
+
+        editor.ForegroundText = "#445566";
+        Assert.Equal(2, context.Service.UndoDepth);
+
+        // Re-applying the same value is a no-op (no history noise).
+        editor.ForegroundText = "#445566";
+        Assert.Equal(2, context.Service.UndoDepth);
+
+        Assert.True(context.Service.TryUndo());
+        Assert.Equal("#112233", context.Config.Pages[0].Widgets[0].Foreground);
+
+        Assert.True(context.Service.TryUndo());
+        Assert.Null(context.Config.Pages[0].Widgets[0].Foreground);
+    }
+
+    [Fact]
+    public void OnIconColor_IsOfferedOnlyForTogglesAndStartsInherited()
+    {
+        var toggle = EditorFor(Toggle("t1"));
+        var label = EditorFor(Label("l1"));
+
+        Assert.True(toggle.SupportsOnIconColor);
+        Assert.False(label.SupportsOnIconColor);
+        Assert.True(toggle.IsOnIconColorInherited);
+        Assert.Equal(string.Empty, toggle.OnIconColorText);
+    }
+
+    [Fact]
+    public void OnIconColorEdit_AppliesLiveAndClearingRestoresTheContrastingDefault()
+    {
+        var context = CreateContext(Toggle("t1", initialOn: true));
+        context.EnterSelect();
+        var editor = context.Editor;
+        var widget = Assert.IsType<ToggleWidgetViewModel>(context.Widgets[0]);
+
+        Assert.Null(widget.OnIconBrush);
+        Assert.Null(widget.DisplayIconBrush);
+
+        editor.OnIconColorText = "#ff8800";
+
+        Assert.False(editor.HasValidationError);
+        Assert.False(editor.IsOnIconColorInherited);
+        Assert.Equal("#FF8800", ((ToggleWidgetConfig)editor.Config).OnIconColor);
+        Assert.Equal(Color.FromRgb(0xFF, 0x88, 0x00), (widget.OnIconBrush as SolidColorBrush)?.Color);
+        Assert.Same(widget.OnIconBrush, widget.DisplayIconBrush);
+        Assert.True(context.Service.IsDirty);
+        Assert.Equal(1, context.Service.UndoDepth);
+
+        editor.OnIconColorText = string.Empty;
+
+        Assert.Null(((ToggleWidgetConfig)editor.Config).OnIconColor);
+        Assert.Null(widget.OnIconBrush);
+        Assert.Null(widget.DisplayIconBrush);
+        Assert.True(editor.IsOnIconColorInherited);
+        Assert.Equal(2, context.Service.UndoDepth);
+    }
+
+    [Fact]
+    public void OnIconColorEdit_InvalidIsBlockedWithFeedbackAndNoMutation()
+    {
+        var context = CreateContext(Toggle("t1"));
+        context.EnterSelect();
+        var editor = context.Editor;
+
+        editor.OnIconColorText = "not-a-color";
+
+        Assert.True(editor.HasValidationError);
+        Assert.Null(((ToggleWidgetConfig)editor.Config).OnIconColor);
+        Assert.True(editor.IsOnIconColorInherited);
     }
 
     [Fact]
@@ -629,6 +740,20 @@ public sealed class PropertyEditorAppearanceTests
         SchemaVersion = PanelConfig.CurrentSchemaVersion,
         ActivePageId = PageId,
         Pages = [new PageConfig { Id = PageId, Widgets = [.. widgets] }],
+    };
+
+    private static ToggleWidgetConfig Toggle(string id, bool initialOn = false) => new()
+    {
+        Id = id,
+        X = 0,
+        Y = 0,
+        Width = 200,
+        Height = 100,
+        Label = id,
+        Icon = "power",
+        OnIcon = "star",
+        InitialOn = initialOn,
+        Action = new MuteActionConfig(),
     };
 
     private static LabelWidgetConfig Label(string id, double? fontSize = null) => new()

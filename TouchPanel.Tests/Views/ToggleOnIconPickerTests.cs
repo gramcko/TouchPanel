@@ -14,7 +14,7 @@ using TouchPanel.Widgets;
 namespace TouchPanel.Tests.Views;
 
 /// <summary>
-/// The user-requested "On icon (accent)" inline picker: offered only for Toggle widgets, beside the
+/// The user-requested "On icon (on state)" inline picker: offered only for Toggle widgets, beside the
 /// existing icon picker in the Appearance section, listing "None" plus the whole catalog, applying
 /// and clearing live (through the same undoable appearance path) and persisting on exit.
 /// </summary>
@@ -93,7 +93,7 @@ public sealed class ToggleOnIconPickerTests
                 Selected = editor.SelectedOnIcon.Id,
                 Picker = picker.SelectedItem?.Id,
                 toggleViewModel.HasOnIcon,
-                toggleViewModel.UsesAccentIcon,
+                toggleViewModel.UsesOnIcon,
                 toggleViewModel.DisplayIconPathData,
                 toggleViewModel.DisplayIconStroke,
                 context.Service.CanUndo,
@@ -117,7 +117,7 @@ public sealed class ToggleOnIconPickerTests
                     Selected = editor.SelectedOnIcon.Id,
                     Picker = picker.SelectedItem?.Id,
                     toggleViewModel.HasOnIcon,
-                    toggleViewModel.UsesAccentIcon,
+                    toggleViewModel.UsesOnIcon,
                     toggleViewModel.DisplayIconGlyph,
                     toggleViewModel.IconGlyph,
                 },
@@ -128,7 +128,7 @@ public sealed class ToggleOnIconPickerTests
         Assert.Equal("microphoneMuted", result.Applied.Selected);
         Assert.Equal("microphoneMuted", result.Applied.Picker);
         Assert.True(result.Applied.HasOnIcon);
-        Assert.True(result.Applied.UsesAccentIcon);
+        Assert.True(result.Applied.UsesOnIcon);
         Assert.Equal(IconCatalog.PathDataFor("microphoneMuted"), result.Applied.DisplayIconPathData);
         Assert.True(result.Applied.DisplayIconStroke);
         Assert.True(result.Applied.CanUndo, "Selecting an on icon must be an undoable edit.");
@@ -137,7 +137,7 @@ public sealed class ToggleOnIconPickerTests
         Assert.Equal(string.Empty, result.Cleared.Selected);
         Assert.Equal(string.Empty, result.Cleared.Picker);
         Assert.False(result.Cleared.HasOnIcon);
-        Assert.False(result.Cleared.UsesAccentIcon);
+        Assert.False(result.Cleared.UsesOnIcon);
         Assert.Equal(result.Cleared.IconGlyph, result.Cleared.DisplayIconGlyph);
     }
 

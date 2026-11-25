@@ -47,17 +47,18 @@
                                                   Visibility="{Binding HasDisplayIcon, Converter={StaticResource BoolVisibilityConverter}}">
                         <!--
                             User-requested on-state icon: the presenter shows the base icon until
-                            the toggle is on with a distinct on icon configured. In that state the
-                            view model's UsesAccentIcon flips Tag to the theme accent brush so the
-                            existing AppearanceForegroundConverter layers the per-widget accent
-                            override over PanelAccentBrush; off state keeps PanelForegroundBrush.
+                            the toggle is on with a distinct on icon configured. The active surface
+                            is accent-filled, so the on icon defaults to PanelBackgroundBrush (a
+                            contrasting theme colour in every theme) instead of the accent; the
+                            per-widget on-icon colour override wins when configured. Off state keeps
+                            PanelForegroundBrush.
                         -->
                         <controls:WidgetIconPresenter.Style>
                             <Style TargetType="{x:Type controls:WidgetIconPresenter}">
                                 <Setter Property="Tag" Value="{DynamicResource PanelForegroundBrush}" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding UsesAccentIcon}" Value="True">
-                                        <Setter Property="Tag" Value="{DynamicResource PanelAccentBrush}" />
+                                    <DataTrigger Binding="{Binding UsesOnIcon}" Value="True">
+                                        <Setter Property="Tag" Value="{DynamicResource PanelBackgroundBrush}" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>

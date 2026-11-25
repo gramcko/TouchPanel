@@ -25,6 +25,7 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
     private bool _persistState;
     private bool _initialOn;
     private bool _isOn;
+    private Brush? _onIconBrush;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ToggleWidgetViewModel"/> class.
@@ -53,6 +54,7 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
         _pageId = pageId;
         _stateLookup = stateLookup;
         _stateChanged = stateChanged;
+        _onIconBrush = AppearanceBrushFactory.Create(config.OnIconColor);
 
         // RF-045/M2-RF-451/454: only opt-in toggles consult the persisted map; a missing key falls
         // back to the configured initial state, and without a page/store the widget stays M1.
@@ -72,39 +74,47 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
     /// addition). With no on icon configured this is always <see cref="WidgetViewModelBase.IconGlyph"/>,
     /// preserving the previous behaviour.
     /// </summary>
-    public string? DisplayIconGlyph => UsesAccentIcon ? OnIconGlyph : IconGlyph;
+    public string? DisplayIconGlyph => UsesOnIcon ? OnIconGlyph : IconGlyph;
 
     /// <summary>
     /// Gets the vector path rendered by the toggle's icon presenter: the on-state vector while the
     /// toggle is on and an on icon is set, otherwise the base icon vector.
     /// </summary>
-    public string? DisplayIconPathData => UsesAccentIcon ? OnIconPathData : IconPathData;
+    public string? DisplayIconPathData => UsesOnIcon ? OnIconPathData : IconPathData;
 
     /// <summary>
     /// Gets a value indicating whether <see cref="DisplayIconPathData"/> is line art drawn with a
     /// stroked outline rather than a filled shape.
     /// </summary>
-    public bool DisplayIconStroke => UsesAccentIcon ? OnIconStroke : IconStroke;
+    public bool DisplayIconStroke => UsesOnIcon ? OnIconStroke : IconStroke;
 
     /// <summary>Gets the stroke pen width in the 24-unit viewbox for the displayed line-art icon, or <c>0</c>.</summary>
-    public double DisplayIconStrokeUnits => UsesAccentIcon ? OnIconStrokeUnits : IconStrokeUnits;
+    public double DisplayIconStrokeUnits => UsesOnIcon ? OnIconStrokeUnits : IconStrokeUnits;
 
     /// <summary>Gets a value indicating whether the toggle has an icon (glyph or vector) to render in its current state.</summary>
     public bool HasDisplayIcon => DisplayIconGlyph is not null || DisplayIconPathData is not null;
 
     /// <summary>
-    /// Gets a value indicating whether the on-state icon is currently rendered in the accent colour
-    /// (user-requested addition): only while the toggle is on <em>and</em> an on icon is configured.
+    /// Gets a value indicating whether the on-state icon is currently rendered (user-requested
+    /// addition): only while the toggle is on <em>and</em> an on icon is configured. In that state
+    /// the icon uses <see cref="OnIconBrush"/> when set, otherwise the contrasting theme default
+    /// (<c>PanelBackgroundBrush</c>) — never the accent, which fills the active surface.
     /// </summary>
-    public bool UsesAccentIcon => _isOn && HasOnIcon;
+    public bool UsesOnIcon => _isOn && HasOnIcon;
 
     /// <summary>
-    /// Gets the brush the icon presenter layers over the theme fallback: the per-widget accent
-    /// override while <see cref="UsesAccentIcon"/> is <see langword="true"/>, otherwise the
-    /// per-widget foreground override. A <see langword="null"/> value means the template's
-    /// <c>PanelAccentBrush</c>/<c>PanelForegroundBrush</c> fallback applies.
+    /// Gets the configured on-state icon colour as a brush, or <see langword="null"/> to use the
+    /// contrasting theme default (<c>PanelBackgroundBrush</c>) via the template fallback.
     /// </summary>
-    public Brush? DisplayIconBrush => UsesAccentIcon ? AccentBrush : ForegroundBrush;
+    public Brush? OnIconBrush => _onIconBrush;
+
+    /// <summary>
+    /// Gets the brush the icon presenter layers over the theme fallback: the configured on-icon
+    /// colour while <see cref="UsesOnIcon"/> is <see langword="true"/>, otherwise the per-widget
+    /// foreground override. A <see langword="null"/> value means the template's fallback applies
+    /// (<c>PanelBackgroundBrush</c> while on, <c>PanelForegroundBrush</c> otherwise).
+    /// </summary>
+    public Brush? DisplayIconBrush => UsesOnIcon ? OnIconBrush : ForegroundBrush;
 
     /// <inheritdoc />
     /// <remarks>
@@ -117,20 +127,25 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
     {
         ArgumentNullException.ThrowIfNull(config);
 
-        var previousUsesAccent = UsesAccentIcon;
-        var previousAccent = AccentBrush;
-        var previousForeground = ForegroundBrush;
+        var previousUsesOnIcon = UsesOnIcon;
+        var previousBrush = DisplayIconBrush;
+        var previousOnIconBrush = _onIconBrush;
 
         base.ApplyConfig(config);
 
-        // The display brush follows the accent colour only in the on state; raise it when the
-        // underlying effective brush actually changed (a live accent/foreground edit).
-        var brushChanged = previousUsesAccent == UsesAccentIcon
-            ? !BrushEquals(
-                previousUsesAccent ? previousAccent : previousForeground,
-                UsesAccentIcon ? AccentBrush : ForegroundBrush)
-            : true;
-        if (brushChanged)
+        var nextOnIconBrush = config is ToggleWidgetConfig toggleConfig
+            ? AppearanceBrushFactory.Create(toggleConfig.OnIconColor)
+            : null;
+        _onIconBrush = nextOnIconBrush;
+
+        // The display brush follows the on-icon colour only in the on state; raise it when the
+        // underlying effective brush actually changed (a live on-icon-colour/foreground edit).
+        if (!BrushEquals(previousOnIconBrush, nextOnIconBrush))
+        {
+            OnPropertyChanged(nameof(OnIconBrush));
+        }
+
+        if (previousUsesOnIcon != UsesOnIcon || !BrushEquals(previousBrush, DisplayIconBrush))
         {
             OnPropertyChanged(nameof(DisplayIconBrush));
         }
@@ -189,14 +204,14 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
     protected override void OnOnIconGlyphChanged()
     {
         NotifyDisplayIconChanged();
-        OnPropertyChanged(nameof(UsesAccentIcon));
+        OnPropertyChanged(nameof(UsesOnIcon));
         OnPropertyChanged(nameof(DisplayIconBrush));
     }
 
     /// <summary>
     /// Raises the on/off state change and, when an on-state icon is configured, the projected
-    /// display-icon properties so the template swaps icon and accent without a rebuild. Without an
-    /// on icon the display icon is identical in both states, so nothing extra is raised.
+    /// display-icon properties so the template swaps icon and on-icon colour without a rebuild.
+    /// Without an on icon the display icon is identical in both states, so nothing extra is raised.
     /// </summary>
     private void NotifyOnStateChanged()
     {
@@ -208,7 +223,7 @@ public sealed class ToggleWidgetViewModel : WidgetViewModelBase
         }
 
         NotifyDisplayIconChanged();
-        OnPropertyChanged(nameof(UsesAccentIcon));
+        OnPropertyChanged(nameof(UsesOnIcon));
         OnPropertyChanged(nameof(DisplayIconBrush));
     }
 

@@ -5,6 +5,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using TouchPanel.Config;
 using TouchPanel.Tests.TestSupport;
+using TouchPanel.Theme;
 using TouchPanel.ViewModels;
 using TouchPanel.Views.Controls;
 
@@ -12,17 +13,19 @@ namespace TouchPanel.Tests.Views;
 
 /// <summary>
 /// Real-BAML coverage for the user-requested toggle on-state icon: the toggle template binds the icon
-/// presenter to the display-icon properties, so the glyph/vector swaps with <c>IsOn</c>, and the
-/// presenter foreground resolves to the theme accent (or the per-widget accent override) only while
-/// the toggle is on with an on icon configured.
+/// presenter to the display-icon properties, so the glyph/vector swaps with <c>IsOn</c>. The active
+/// surface is accent-filled, so the on icon must never inherit the accent again: it uses the
+/// configured <see cref="ToggleWidgetConfig.OnIconColor"/> when set, otherwise the contrasting theme
+/// default (<c>PanelBackgroundBrush</c>).
 /// </summary>
 public sealed class ToggleOnIconTemplateTests
 {
-    private const string AccentKey = "PanelAccentBrush";
+    private const string BackgroundKey = "PanelBackgroundBrush";
     private const string ForegroundKey = "PanelForegroundBrush";
+    private const string AccentKey = "PanelAccentBrush";
 
     [Fact]
-    public async Task Template_OnStateWithGlyphOnIcon_ShowsTheOnGlyphInTheThemeAccent()
+    public async Task Template_OnStateWithGlyphOnIcon_UsesTheContrastingPanelBackgroundByDefault()
     {
         using var sta = new StaThread();
 
@@ -36,12 +39,14 @@ public sealed class ToggleOnIconTemplateTests
             {
                 GlyphText = glyph.Text,
                 Foreground = (presenter.Foreground as SolidColorBrush)?.Color,
+                Background = ThemeColor(BackgroundKey),
                 Accent = ThemeColor(AccentKey),
             };
         });
 
         Assert.Equal(IconCatalog.GlyphFor("star"), result.GlyphText);
-        Assert.Equal(result.Accent, result.Foreground);
+        Assert.Equal(result.Background, result.Foreground);
+        Assert.NotEqual(result.Accent, result.Foreground);
         Assert.NotEqual(IconCatalog.GlyphFor("power"), result.GlyphText);
     }
 
@@ -61,17 +66,17 @@ public sealed class ToggleOnIconTemplateTests
                 GlyphText = glyph.Text,
                 Foreground = (presenter.Foreground as SolidColorBrush)?.Color,
                 PanelForeground = ThemeColor(ForegroundKey),
-                Accent = ThemeColor(AccentKey),
+                Background = ThemeColor(BackgroundKey),
             };
         });
 
         Assert.Equal(IconCatalog.GlyphFor("power"), result.GlyphText);
         Assert.Equal(result.PanelForeground, result.Foreground);
-        Assert.NotEqual(result.Accent, result.Foreground);
+        Assert.NotEqual(result.Background, result.Foreground);
     }
 
     [Fact]
-    public async Task Template_OnStateWithVectorOnIcon_ShowsAStrokedAccentPath()
+    public async Task Template_OnStateWithVectorOnIcon_ShowsAStrokedPathInTheContrastingColour()
     {
         using var sta = new StaThread();
 
@@ -90,7 +95,7 @@ public sealed class ToggleOnIconTemplateTests
                 StrokeVisibility = stroked.Visibility,
                 StrokeBrush = (stroked.Stroke as SolidColorBrush)?.Color,
                 HasGeometry = stroked.Data is not null,
-                Accent = ThemeColor(AccentKey),
+                Background = ThemeColor(BackgroundKey),
             };
         });
 
@@ -98,11 +103,30 @@ public sealed class ToggleOnIconTemplateTests
         Assert.Equal(Visibility.Collapsed, result.FilledVisibility);
         Assert.Equal(Visibility.Visible, result.StrokeVisibility);
         Assert.True(result.HasGeometry);
-        Assert.Equal(result.Accent, result.StrokeBrush);
+        Assert.Equal(result.Background, result.StrokeBrush);
     }
 
     [Fact]
-    public async Task Template_PerWidgetAccentOverride_WinsForTheOnIcon()
+    public async Task Template_PerWidgetOnIconColour_WinsOverTheThemeDefault()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var viewModel = CreateViewModel(
+                initialOn: true,
+                icon: "power",
+                onIcon: "star",
+                onIconColor: "#FF00FF00");
+            var presenter = Realize(viewModel);
+            return (presenter.Foreground as SolidColorBrush)?.Color;
+        });
+
+        Assert.Equal(Color.FromRgb(0x00, 0xFF, 0x00), result);
+    }
+
+    [Fact]
+    public async Task Template_PerWidgetAccentOverride_DoesNotColourTheOnIcon()
     {
         using var sta = new StaThread();
 
@@ -114,17 +138,47 @@ public sealed class ToggleOnIconTemplateTests
                 onIcon: "star",
                 accent: "#FF00FF00");
             var presenter = Realize(viewModel);
-            return (presenter.Foreground as SolidColorBrush)?.Color;
+            return new
+            {
+                Foreground = (presenter.Foreground as SolidColorBrush)?.Color,
+                Background = ThemeColor(BackgroundKey),
+            };
         });
 
-        Assert.Equal(Color.FromRgb(0x00, 0xFF, 0x00), result);
+        Assert.Equal(result.Background, result.Foreground);
+        Assert.NotEqual(Color.FromRgb(0x00, 0xFF, 0x00), result.Foreground);
+    }
+
+    [Theory]
+    [InlineData(ThemeIds.Dark)]
+    [InlineData(ThemeIds.Light)]
+    [InlineData(ThemeIds.HighContrast)]
+    [InlineData(ThemeIds.Midnight)]
+    [InlineData(ThemeIds.Nord)]
+    [InlineData(ThemeIds.Oled)]
+    public async Task DefaultOnIconColour_HasAtLeastFourPointFiveContrastAgainstTheActiveAccent(string themeId)
+    {
+        using var sta = new StaThread();
+
+        var contrast = await sta.InvokeAsync(() =>
+        {
+            var theme = Load($"/TouchPanel;component/Theme/Themes/{ThemeDictionaryName(themeId)}");
+            var background = ((SolidColorBrush)theme[BackgroundKey]).Color;
+            var accent = ((SolidColorBrush)theme[AccentKey]).Color;
+            return Contrast(background, accent);
+        });
+
+        Assert.True(
+            contrast >= 4.5,
+            $"Theme '{themeId}' default on-icon contrast against the active accent is {contrast:0.00}:1; expected at least 4.5:1.");
     }
 
     private static ToggleWidgetViewModel CreateViewModel(
         bool initialOn,
         string icon,
         string? onIcon,
-        string? accent = null) => new(new ToggleWidgetConfig
+        string? accent = null,
+        string? onIconColor = null) => new(new ToggleWidgetConfig
     {
         Id = "toggle-1",
         X = 0,
@@ -134,6 +188,7 @@ public sealed class ToggleOnIconTemplateTests
         Label = "Mic",
         Icon = icon,
         OnIcon = onIcon,
+        OnIconColor = onIconColor,
         InitialOn = initialOn,
         Accent = accent,
     });
@@ -164,8 +219,36 @@ public sealed class ToggleOnIconTemplateTests
             FindDescendant<WidgetIconPresenter>(presenter, element => element.Name == "IconGlyph"));
     }
 
+    private static string ThemeDictionaryName(string themeId) => ThemeIds.Normalize(themeId) switch
+    {
+        ThemeIds.Light => "Light.xaml",
+        ThemeIds.HighContrast => "HighContrast.xaml",
+        ThemeIds.Midnight => "Midnight.xaml",
+        ThemeIds.Nord => "Nord.xaml",
+        ThemeIds.Oled => "Oled.xaml",
+        _ => "Dark.xaml",
+    };
+
     private static Color ThemeColor(string key) =>
         ((SolidColorBrush)Load("/TouchPanel;component/Theme/Themes/Dark.xaml")[key]).Color;
+
+    private static double Contrast(Color first, Color second)
+    {
+        var lighter = Math.Max(RelativeLuminance(first), RelativeLuminance(second));
+        var darker = Math.Min(RelativeLuminance(first), RelativeLuminance(second));
+        return (lighter + 0.05) / (darker + 0.05);
+    }
+
+    private static double RelativeLuminance(Color color)
+    {
+        static double Channel(byte value)
+        {
+            var scaled = value / 255.0;
+            return scaled <= 0.03928 ? scaled / 12.92 : Math.Pow((scaled + 0.055) / 1.055, 2.4);
+        }
+
+        return (0.2126 * Channel(color.R)) + (0.7152 * Channel(color.G)) + (0.0722 * Channel(color.B));
+    }
 
     private static ResourceDictionary Load(string componentUri) =>
         Assert.IsType<ResourceDictionary>(Application.LoadComponent(new Uri(componentUri, UriKind.Relative)));

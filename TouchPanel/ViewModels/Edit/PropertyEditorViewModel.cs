@@ -71,6 +71,7 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFi
     private string _foregroundText = string.Empty;
     private string _backgroundText = string.Empty;
     private string _accentText = string.Empty;
+    private string _onIconColorText = string.Empty;
     private string _fontSizeText = string.Empty;
     private string _opacityText = string.Empty;
     private string _formatText = string.Empty;
@@ -196,6 +197,7 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFi
         _foregroundText = config.Foreground ?? _themeDefaults.Foreground;
         _backgroundText = config.Background ?? _themeDefaults.Background;
         _accentText = config.Accent ?? _themeDefaults.Accent;
+        _onIconColorText = config is ToggleWidgetConfig { OnIconColor: { } onIconColor } ? onIconColor : string.Empty;
         _fontSizeText = config.FontSize is double fontSize ? FormatNumber(fontSize) : FormatNumber(_themeDefaults.FontSize);
         _opacityText = config.Opacity is double opacity ? FormatNumber(opacity) : FormatNumber(_themeDefaults.Opacity);
 
@@ -1489,9 +1491,10 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFi
     public bool SupportsOnIcon => _config is ToggleWidgetConfig;
 
     /// <summary>
-    /// Gets the entries offered by the "On icon (accent)" picker (user-requested addition):
-    /// "(none)" plus the built-in icon catalog. "(none)" keeps the base icon in both states; a chosen
-    /// entry is rendered instead while the toggle is on, coloured with the widget's accent.
+    /// Gets the entries offered by the on-icon picker (user-requested addition): "(none)" plus the
+    /// built-in icon catalog. "(none)" keeps the base icon in both states; a chosen entry is rendered
+    /// instead while the toggle is on, coloured with the on-icon colour or the contrasting theme
+    /// default.
     /// </summary>
     public IReadOnlyList<IconOption> OnIconOptions { get; }
 
@@ -1587,6 +1590,46 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFi
         get => _accentText;
         set => ApplyColor(ref _accentText, value, () => _config.Accent, _themeDefaults.Accent, v => _config.Accent = v);
     }
+
+    /// <summary>
+    /// Gets a value indicating whether the edited widget exposes the optional on-state icon colour
+    /// (user-requested addition): only the Toggle has a distinct on state.
+    /// </summary>
+    public bool SupportsOnIconColor => _config is ToggleWidgetConfig;
+
+    /// <summary>
+    /// Gets or sets the optional on-state icon colour (user-requested addition). An empty value
+    /// clears <see cref="ToggleWidgetConfig.OnIconColor"/> so the contrasting theme default applies;
+    /// a valid <c>#RRGGBB</c>/<c>#AARRGGBB</c> value is normalized and committed.
+    /// </summary>
+    public string OnIconColorText
+    {
+        get => _onIconColorText;
+        set => ApplyColor(
+            ref _onIconColorText,
+            value,
+            () => (_config as ToggleWidgetConfig)?.OnIconColor,
+            string.Empty,
+            v =>
+            {
+                if (_config is ToggleWidgetConfig toggle)
+                {
+                    toggle.OnIconColor = v;
+                }
+            });
+    }
+
+    /// <summary>Gets a value indicating whether the foreground uses the inherited theme default.</summary>
+    public bool IsForegroundInherited => _config.Foreground is null;
+
+    /// <summary>Gets a value indicating whether the background uses the inherited theme default.</summary>
+    public bool IsBackgroundInherited => _config.Background is null;
+
+    /// <summary>Gets a value indicating whether the accent uses the inherited theme default.</summary>
+    public bool IsAccentInherited => _config.Accent is null;
+
+    /// <summary>Gets a value indicating whether the on-icon colour uses the contrasting theme default.</summary>
+    public bool IsOnIconColorInherited => _config is not ToggleWidgetConfig { OnIconColor: not null };
 
     /// <summary>
     /// Gets or sets the font-size override in DIPs (RF-043/M2-RF-436). While no override exists the
@@ -2137,6 +2180,40 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFi
         string themeDefault,
         Action<string?> apply,
         [CallerMemberName] string? propertyName = null)
+    {
+        ApplyColorCore(ref field, value, currentOverride, themeDefault, apply, propertyName);
+
+        // Raise unconditionally: the picker's one-way IsInherited binding must re-assert when a
+        // selection equals the theme default (the value stays inherited even though the local DP
+        // was set), not only when the inherited flag flips.
+        NotifyColorInheritance(propertyName);
+    }
+
+    /// <summary>
+    /// Raises the <c>Is...Inherited</c> companion of a colour field so the inline picker's collapsed
+    /// header switches between the hex value and "Inherited" without a rebuild.
+    /// </summary>
+    /// <param name="propertyName">The colour property name (for example <c>ForegroundText</c>).</param>
+    private void NotifyColorInheritance(string? propertyName)
+    {
+        const string suffix = "Text";
+        if (string.IsNullOrEmpty(propertyName)
+            || !propertyName.EndsWith(suffix, StringComparison.Ordinal)
+            || propertyName.Length == suffix.Length)
+        {
+            return;
+        }
+
+        OnPropertyChanged("Is" + propertyName[..^suffix.Length] + "Inherited");
+    }
+
+    private void ApplyColorCore(
+        ref string field,
+        string? value,
+        Func<string?> currentOverride,
+        string themeDefault,
+        Action<string?> apply,
+        string? propertyName)
     {
         var text = (value ?? string.Empty).Trim();
 

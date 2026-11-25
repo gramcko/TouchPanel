@@ -556,6 +556,19 @@ public static class ConfigValidator
         NormalizeColor("background", widget.Background, value => widget.Background = value, widget, diagnostics);
         NormalizeColor("accent", widget.Accent, value => widget.Accent = value, widget, diagnostics);
 
+        // User-requested on-state icon colour (Toggle only): additive like the other optional
+        // colours, so a missing/null value keeps the contrasting theme default and only an invalid
+        // value is cleared with a warning.
+        if (widget is ToggleWidgetConfig onIconToggle)
+        {
+            NormalizeColor(
+                "onIconColor",
+                onIconToggle.OnIconColor,
+                value => onIconToggle.OnIconColor = value,
+                widget,
+                diagnostics);
+        }
+
         var fontSize = WidgetAppearance.NormalizeFontSize(widget.FontSize);
         if (!Nullable.Equals(fontSize, widget.FontSize))
         {
