@@ -51,7 +51,7 @@ public sealed class PagesEditorBackgroundViewTests
                 Enabled = apply.IsEnabled,
                 ColorText = color.SelectedHex,
                 ImageText = image.Text,
-                ColorCommand = ReferenceEquals(color.CommitCommand, context.ViewModel.ApplyBackgroundCommand),
+                ColorCommand = color.FieldCommand is not null,
             };
         });
 

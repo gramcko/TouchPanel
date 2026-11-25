@@ -1,17 +1,16 @@
 using System.Collections;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using TouchPanel.Config;
 
 namespace TouchPanel.Views.Controls;
 
 /// <summary>
-/// Inline, expandable picker for the long built-in icon catalogs (user-requested replacement for
-/// the icon ComboBoxes). The collapsed header shows the current entry; tapping it expands a
-/// two-column tile list inside the property panel's scroll surface, and tapping a tile applies that
-/// entry and collapses again. Because the picker is part of the panel flow (no <c>Popup</c>), the
-/// panel's <see cref="TouchPan"/> behavior is the single scroll mechanism and a drag that starts on
-/// a tile scrolls the panel instead of selecting.
+/// Touch-sized field button for the built-in icon catalogs (user-requested docked flyout). The
+/// control only renders the current entry; tapping it executes <see cref="FieldCommand"/>, which the
+/// property panel binds to its flyout toggle. No tiles are rendered here, so the property panel never
+/// changes height when a picker opens.
 /// </summary>
 public partial class InlineIconPicker : UserControl
 {
@@ -29,23 +28,24 @@ public partial class InlineIconPicker : UserControl
         typeof(InlineIconPicker),
         new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault));
 
-    /// <summary>Identifies the <see cref="IsExpanded"/> dependency property.</summary>
-    public static readonly DependencyProperty IsExpandedProperty = DependencyProperty.Register(
-        nameof(IsExpanded),
-        typeof(bool),
+    /// <summary>Identifies the <see cref="FieldCommand"/> dependency property.</summary>
+    public static readonly DependencyProperty FieldCommandProperty = DependencyProperty.Register(
+        nameof(FieldCommand),
+        typeof(ICommand),
         typeof(InlineIconPicker),
-        new FrameworkPropertyMetadata(false));
+        new PropertyMetadata(null));
+
+    /// <summary>Identifies the <see cref="FieldCommandParameter"/> dependency property.</summary>
+    public static readonly DependencyProperty FieldCommandParameterProperty = DependencyProperty.Register(
+        nameof(FieldCommandParameter),
+        typeof(object),
+        typeof(InlineIconPicker),
+        new PropertyMetadata(null));
 
     /// <summary>Initializes a new instance of the <see cref="InlineIconPicker"/> class.</summary>
-    public InlineIconPicker()
-    {
-        InitializeComponent();
-    }
+    public InlineIconPicker() => InitializeComponent();
 
-    /// <summary>
-    /// Gets or sets the entries shown when expanded. The property editor supplies its existing
-    /// "none + catalog" option list, so the picker never owns catalog semantics.
-    /// </summary>
+    /// <summary>Gets or sets the entries the field labels (kept for binding compatibility).</summary>
     public IEnumerable? ItemsSource
     {
         get => (IEnumerable?)GetValue(ItemsSourceProperty);
@@ -53,8 +53,8 @@ public partial class InlineIconPicker : UserControl
     }
 
     /// <summary>
-    /// Gets or sets the current entry. Two-way bound to the property editor's selection, so a tile
-    /// tap runs the same apply/live-projection path the previous ComboBox used.
+    /// Gets or sets the current entry. Two-way bound to the property editor's selection so the field
+    /// header reflects the applied icon.
     /// </summary>
     public IconOption? SelectedItem
     {
@@ -62,30 +62,26 @@ public partial class InlineIconPicker : UserControl
         set => SetValue(SelectedItemProperty, value);
     }
 
-    /// <summary>Gets or sets whether the inline tile list is expanded. Starts collapsed.</summary>
-    public bool IsExpanded
+    /// <summary>Gets or sets the command invoked when the field is tapped (opens/toggles the flyout).</summary>
+    public ICommand? FieldCommand
     {
-        get => (bool)GetValue(IsExpandedProperty);
-        set => SetValue(IsExpandedProperty, value);
+        get => (ICommand?)GetValue(FieldCommandProperty);
+        set => SetValue(FieldCommandProperty, value);
     }
 
-    /// <summary>Toggles the inline list; tapping the header again collapses it.</summary>
-    /// <param name="sender">The header button.</param>
-    /// <param name="e">The click event data.</param>
-    private void OnHeaderClick(object sender, RoutedEventArgs e) => IsExpanded = !IsExpanded;
-
-    /// <summary>
-    /// Applies the tapped tile through the two-way selection binding and collapses the list. A drag
-    /// never reaches this handler: the panel's touch pan consumes the gesture before promotion.
-    /// </summary>
-    /// <param name="sender">The tile button whose data context is an icon option.</param>
-    /// <param name="e">The click event data.</param>
-    private void OnTileClick(object sender, RoutedEventArgs e)
+    /// <summary>Gets or sets the parameter passed to <see cref="FieldCommand"/>.</summary>
+    public object? FieldCommandParameter
     {
-        if (sender is FrameworkElement { DataContext: IconOption option })
+        get => GetValue(FieldCommandParameterProperty);
+        set => SetValue(FieldCommandParameterProperty, value);
+    }
+
+    private void OnHeaderClick(object sender, RoutedEventArgs e)
+    {
+        var command = FieldCommand;
+        if (command?.CanExecute(FieldCommandParameter) == true)
         {
-            SelectedItem = option;
-            IsExpanded = false;
+            command.Execute(FieldCommandParameter);
         }
 
         e.Handled = true;

@@ -43,6 +43,7 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     private readonly Func<PanelConfig?> _configAccessor;
     private readonly Func<bool> _canManage;
     private readonly IImageFilePicker? _imagePicker;
+    private readonly IRecentColorPalette _recentColors;
     private readonly ILogger _logger;
 
     private IReadOnlyList<PageEditorItem> _pages = [];
@@ -67,6 +68,7 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     /// <param name="canManage">Gate consulted before structural changes; defaults to always allowed.</param>
     /// <param name="logger">Logger for page-management summaries; defaults to the global Serilog logger.</param>
     /// <param name="imagePicker">Boundary used by the background image Browse action; optional so the editor still works without a dialog.</param>
+    /// <param name="recentColors">The shared MRU colour palette; when <see langword="null"/>, an in-memory palette seeded with the defaults is used.</param>
     /// <exception cref="ArgumentNullException">Thrown when a required dependency is <see langword="null"/>.</exception>
     public PagesEditorViewModel(
         ISettingsService settings,
@@ -74,7 +76,8 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         Func<PanelConfig?> configAccessor,
         Func<bool>? canManage = null,
         ILogger? logger = null,
-        IImageFilePicker? imagePicker = null)
+        IImageFilePicker? imagePicker = null,
+        IRecentColorPalette? recentColors = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(switchService);
@@ -86,6 +89,7 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         _canManage = canManage ?? (static () => true);
         _logger = (logger ?? Log.Logger).ForContext<PagesEditorViewModel>();
         _imagePicker = imagePicker;
+        _recentColors = recentColors ?? new RecentColorPalette();
 
         AddPageCommand = new AsyncRelayCommand(AddPageAsync);
         RenamePageCommand = new AsyncRelayCommand(RenameSelectedAsync);
@@ -102,6 +106,21 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         ConfirmRemoveCommand = new AsyncRelayCommand(ConfirmRemoveAsync);
         CancelRemoveCommand = new RelayCommand(CancelRemove);
         SelectPageCommand = new SelectPageRowCommand(SelectPage);
+
+        BackgroundColorFlyout = new ColorPickerFlyoutViewModel(
+            _recentColors,
+            () => BackgroundColor,
+            () => IsPageBackgroundColorInherited,
+            hex =>
+            {
+                BackgroundColor = hex;
+                if (ApplyBackgroundCommand.CanExecute(null))
+                {
+                    ApplyBackgroundCommand.Execute(null);
+                }
+            },
+            "Page background");
+        ToggleBackgroundColorFlyoutCommand = new RelayCommand(() => BackgroundColorFlyout.Toggle());
 
         Refresh();
     }
@@ -157,6 +176,15 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
     /// inline picker's collapsed header shows "None" (user-requested colour picker).
     /// </summary>
     public bool IsPageBackgroundColorInherited => string.IsNullOrWhiteSpace(_backgroundColor);
+
+    /// <summary>
+    /// Gets the page-background colour flyout (user-requested docked picker): it shows the shared
+    /// MRU palette and applies a selection immediately through the existing apply pipeline.
+    /// </summary>
+    public ColorPickerFlyoutViewModel BackgroundColorFlyout { get; }
+
+    /// <summary>Gets the command that opens/toggles the page-background colour flyout.</summary>
+    public ICommand ToggleBackgroundColorFlyoutCommand { get; }
 
     /// <summary>
     /// Gets or sets the background image path draft for the selected page (absolute; blank clears
@@ -402,6 +430,7 @@ public sealed class PagesEditorViewModel : INotifyPropertyChanged
         _selectedPageId = pageId;
         var config = _configAccessor();
         _selectedPageName = config is null ? string.Empty : ResolveDraftName(config, pageId);
+        BackgroundColorFlyout.Close();
         CancelRemove();
         Refresh(pageId);
     }

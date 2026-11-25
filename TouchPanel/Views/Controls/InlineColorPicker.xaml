@@ -7,11 +7,10 @@
              Stylus.IsFlicksEnabled="False">
 
     <!--
-        User-requested touch-friendly colour picker (no popup, no dialog): a 40 DIP header shows the
-        current swatch and value (or "Inherited"/"None"), and a tap expands an inline six-column
-        swatch grid plus the exact-hex field. The picker lives in the property panel's scroll
-        surface, so a drag scrolls the panel and a tap applies immediately and collapses. The grid
-        is 6 x 40 DIP + margins = 264 DIP, which fits the 300 DIP panel's ~270 DIP content width.
+        Touch-sized colour field button (user-requested docked flyout). The 40 DIP header shows the
+        current swatch and value (or "Inherited"/"None"); a tap asks the owning editor to open the
+        shared colour flyout. The swatch grid and hex entry live in that flyout, never inside the
+        property panel, so opening a picker never pushes the remaining fields down.
     -->
     <UserControl.Resources>
         <ResourceDictionary>
@@ -19,16 +18,13 @@
                 <ResourceDictionary Source="/TouchPanel;component/Theme/Styles.xaml" />
             </ResourceDictionary.MergedDictionaries>
 
-            <BooleanToVisibilityConverter x:Key="ColorPickerVisibilityConverter" />
-            <local:ColorSwatchSelectedConverter x:Key="ColorSwatchSelectedConverter" />
-
-            <!-- Collapsed header: themed like the surrounding fields, >= 40 DIP, tap toggles. -->
             <Style x:Key="ColorPickerHeaderStyle" TargetType="Button">
                 <Setter Property="MinHeight" Value="40" />
                 <Setter Property="Padding" Value="8,4" />
                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                 <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
                 <Setter Property="FontSize" Value="15" />
+                <Setter Property="Focusable" Value="False" />
                 <Setter Property="FocusVisualStyle" Value="{x:Null}" />
                 <Setter Property="Template">
                     <Setter.Value>
@@ -53,151 +49,40 @@
                     </Setter.Value>
                 </Setter>
             </Style>
-
-            <!-- One swatch tile: exactly 40 DIP, accent border when it is the current value. -->
-            <Style x:Key="ColorPickerTileStyle" TargetType="Button">
-                <Setter Property="Width" Value="40" />
-                <Setter Property="Height" Value="40" />
-                <Setter Property="MinWidth" Value="40" />
-                <Setter Property="MinHeight" Value="40" />
-                <Setter Property="Margin" Value="2" />
-                <Setter Property="Padding" Value="0" />
-                <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
-                <Setter Property="FontSize" Value="11" />
-                <Setter Property="Background" Value="{DynamicResource WidgetSurfaceBrush}" />
-                <Setter Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
-                <Setter Property="BorderThickness" Value="1" />
-                <Setter Property="Focusable" Value="False" />
-                <Setter Property="FocusVisualStyle" Value="{x:Null}" />
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="TileSurface"
-                                    Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="6"
-                                    SnapsToDevicePixels="True">
-                                <ContentPresenter HorizontalAlignment="Center"
-                                                  VerticalAlignment="Center" />
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="TileSurface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
-                                    <Setter TargetName="TileSurface" Property="BorderThickness" Value="2" />
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
-                <Style.Triggers>
-                    <DataTrigger Value="True">
-                        <DataTrigger.Binding>
-                            <MultiBinding Converter="{StaticResource ColorSwatchSelectedConverter}">
-                                <Binding />
-                                <Binding Path="SelectedHex"
-                                         RelativeSource="{RelativeSource AncestorType={x:Type local:InlineColorPicker}}" />
-                                <Binding Path="IsInherited"
-                                         RelativeSource="{RelativeSource AncestorType={x:Type local:InlineColorPicker}}" />
-                            </MultiBinding>
-                        </DataTrigger.Binding>
-                        <Setter Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
-                        <Setter Property="BorderThickness" Value="2" />
-                    </DataTrigger>
-                </Style.Triggers>
-            </Style>
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <StackPanel Focusable="False">
-        <Button x:Name="PickerHeader"
-                Style="{StaticResource ColorPickerHeaderStyle}"
-                Click="OnHeaderClick"
-                AutomationProperties.Name="Choose colour">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+    <Button x:Name="PickerHeader"
+            Style="{StaticResource ColorPickerHeaderStyle}"
+            Click="OnHeaderClick"
+            AutomationProperties.Name="Choose colour">
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
 
-                <Border x:Name="CurrentSwatch"
-                        Width="24"
-                        Height="24"
-                        Margin="0,0,8,0"
-                        CornerRadius="4"
-                        BorderBrush="{DynamicResource WidgetBorderBrush}"
-                        BorderThickness="1"
-                        SnapsToDevicePixels="True"
-                        VerticalAlignment="Center" />
+            <Border x:Name="CurrentSwatch"
+                    Width="24"
+                    Height="24"
+                    Margin="0,0,8,0"
+                    CornerRadius="4"
+                    BorderBrush="{DynamicResource WidgetBorderBrush}"
+                    BorderThickness="1"
+                    SnapsToDevicePixels="True"
+                    VerticalAlignment="Center" />
 
-                <TextBlock x:Name="HeaderLabel"
-                           Grid.Column="1"
-                           VerticalAlignment="Center"
-                           TextTrimming="CharacterEllipsis" />
+            <TextBlock x:Name="HeaderLabel"
+                       Grid.Column="1"
+                       VerticalAlignment="Center"
+                       TextTrimming="CharacterEllipsis" />
 
-                <TextBlock Grid.Column="2"
-                           Text="&#x25BE;"
-                           Margin="8,0,0,0"
-                           Opacity="0.7"
-                           VerticalAlignment="Center" />
-            </Grid>
-        </Button>
-
-        <StackPanel x:Name="PickerBody"
-                    Margin="0,4,0,0"
-                    Focusable="False"
-                    Visibility="{Binding IsExpanded, RelativeSource={RelativeSource AncestorType={x:Type local:InlineColorPicker}}, Converter={StaticResource ColorPickerVisibilityConverter}}">
-            <ItemsControl x:Name="SwatchTiles"
-                          Focusable="False"
-                          HorizontalAlignment="Left">
-                <ItemsControl.ItemsPanel>
-                    <ItemsPanelTemplate>
-                        <!-- Six swatches per row inside the 300 DIP property panel. -->
-                        <UniformGrid Columns="6" />
-                    </ItemsPanelTemplate>
-                </ItemsControl.ItemsPanel>
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <Button Style="{StaticResource ColorPickerTileStyle}"
-                                Background="{Binding Brush}"
-                                Click="OnTileClick"
-                                ToolTip="{Binding Name}"
-                                AutomationProperties.Name="{Binding Name}">
-                            <TextBlock Text="{Binding DisplayText}"
-                                       Foreground="{DynamicResource PanelForegroundBrush}"
-                                       FontSize="11"
-                                       TextAlignment="Center"
-                                       TextWrapping="Wrap" />
-                        </Button>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <!-- Exact value entry: the keystroke filter accepts # + hex digits only; Enter or a
-                 focus loss commits, so typing never creates per-keystroke undo steps. -->
-            <TextBox x:Name="HexBox"
-                     Height="40"
-                     Margin="2,6,2,0"
-                     FontSize="15"
-                     Padding="8,4"
-                     VerticalContentAlignment="Center"
-                     Foreground="{DynamicResource PanelForegroundBrush}"
-                     Background="{DynamicResource WidgetSurfaceBrush}"
-                     BorderBrush="{DynamicResource WidgetBorderBrush}"
-                     BorderThickness="1"
-                     CaretBrush="{DynamicResource PanelForegroundBrush}"
-                     PreviewTextInput="OnHexPreviewTextInput"
-                     PreviewKeyDown="OnHexPreviewKeyDown"
-                     LostKeyboardFocus="OnHexLostKeyboardFocus"
-                     AutomationProperties.Name="Colour hex value" />
-
-            <TextBlock x:Name="HexErrorText"
-                       Margin="2,4,2,0"
-                       FontSize="12"
-                       TextWrapping="Wrap"
-                       Foreground="#FFFF6B6B"
-                       Visibility="Collapsed" />
-        </StackPanel>
-    </StackPanel>
+            <TextBlock Grid.Column="2"
+                       Text="&#x25BE;"
+                       Margin="8,0,0,0"
+                       Opacity="0.7"
+                       VerticalAlignment="Center" />
+        </Grid>
+    </Button>
 </UserControl>

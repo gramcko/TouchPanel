@@ -276,6 +276,9 @@ public sealed class EditOverlayTests
             var contentControl = Assert.IsType<ContentControl>(panel.Child);
             var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
             content.DataContext = contentControl.Content;
+            content.Measure(new Size(300, 560));
+            content.Arrange(new Rect(0, 0, 300, 560));
+            content.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
             // The action type selector and the run-command browse button exist for a Button; the
@@ -333,6 +336,9 @@ public sealed class EditOverlayTests
             var contentControl = Assert.IsType<ContentControl>(panel.Child);
             var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
             content.DataContext = contentControl.Content;
+            content.Measure(new Size(300, 560));
+            content.Arrange(new Rect(0, 0, 300, 560));
+            content.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
             var browseButton = content.FindName("ImageBrowseButton") as Button;
@@ -370,6 +376,9 @@ public sealed class EditOverlayTests
             var contentControl = Assert.IsType<ContentControl>(panel.Child);
             var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
             content.DataContext = contentControl.Content;
+            content.Measure(new Size(300, 560));
+            content.Arrange(new Rect(0, 0, 300, 560));
+            content.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
             var unitBox = content.FindName("DisplayUnitBox") as ComboBox;
@@ -431,6 +440,9 @@ public sealed class EditOverlayTests
             var contentControl = Assert.IsType<ContentControl>(panel.Child);
             var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
             content.DataContext = contentControl.Content;
+            content.Measure(new Size(300, 560));
+            content.Arrange(new Rect(0, 0, 300, 560));
+            content.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
             // A Label widget shows its text as the widget itself; the label-icon option only applies
@@ -509,12 +521,16 @@ public sealed class EditOverlayTests
             var x = Assert.IsType<Button>(content.FindName("DeleteWidgetButton"));
 
             content.DataContext = page.Widgets[0];
+            content.Measure(new Size(200, 120));
+            content.Arrange(new Rect(0, 0, 200, 120));
+            content.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
             var collapsedWhenUnselected = x.Visibility;
             var xFocusable = x.Focusable;
 
             service.Enter(1024, 600);
             service.SelectWidget(page.Widgets[0]);
+            content.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
             var visibleWhenSelected = x.Visibility;
 
@@ -586,6 +602,9 @@ public sealed class EditOverlayTests
             var contentControl = Assert.IsType<ContentControl>(panel.Child);
             var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
             content.DataContext = contentControl.Content;
+            content.Measure(new Size(300, 560));
+            content.Arrange(new Rect(0, 0, 300, 560));
+            content.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
             var section = content.FindName("ActionHotkeySection") as StackPanel;
@@ -631,6 +650,9 @@ public sealed class EditOverlayTests
             var contentControl = Assert.IsType<ContentControl>(panel.Child);
             var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
             content.DataContext = contentControl.Content;
+            content.Measure(new Size(300, 560));
+            content.Arrange(new Rect(0, 0, 300, 560));
+            content.UpdateLayout();
 
             var picker = service.PropertyEditor!.ActionPicker!;
             picker.SelectedActionOption = picker.ActionTypeOptions.First(option => option.Type == ActionTypes.Hotkey);
@@ -886,6 +908,9 @@ public sealed class EditOverlayTests
             var contentControl = Assert.IsType<ContentControl>(panel.Child);
             var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
             content.DataContext = contentControl.Content;
+            content.Measure(new Size(300, 560));
+            content.Arrange(new Rect(0, 0, 300, 560));
+            content.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
             var propertyScroll = Assert.IsType<ScrollViewer>(content.FindName("PropertyPanelScroll"));
@@ -946,6 +971,9 @@ public sealed class EditOverlayTests
             var contentControl = Assert.IsType<ContentControl>(panel.Child);
             var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
             content.DataContext = contentControl.Content;
+            content.Measure(new Size(300, 560));
+            content.Arrange(new Rect(0, 0, 300, 560));
+            content.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
             var close = Assert.IsType<Button>(content.FindName("PropertyCloseButton"));

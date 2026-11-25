@@ -1,10 +1,8 @@
-using System.Collections;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Media;
-using System.Windows.Shapes;
 using System.Windows.Threading;
+using TouchPanel.Actions;
 using TouchPanel.Config;
 using TouchPanel.Tests.TestSupport;
 using TouchPanel.ViewModels;
@@ -16,413 +14,518 @@ using TouchPanel.Widgets;
 namespace TouchPanel.Tests.Views;
 
 /// <summary>
-/// User-requested replacement for the long icon ComboBoxes: the property panel now hosts an inline
-/// <see cref="InlineIconPicker"/> (collapsed header + two-column tile list in the panel flow). These
-/// STA checks cover the collapsed/expanded states, catalog coverage, selection marking, the
-/// apply/clear paths, that the tiles live inside the panel's <see cref="ScrollViewer"/> (so the
-/// existing <see cref="TouchPan"/> behavior scrolls over them), and that the popup ComboBox
-/// touch-scroll regression is fully removed.
+/// User-requested docked icon picker: the field is a 40 DIP button, the flyout opens to the left of
+/// the property panel (not inside it), lists the whole catalog with the current entry marked, toggles
+/// on the same field, switches target in place, stays exclusive with the colour flyout, and closes
+/// after a selection or when the editor closes.
 /// </summary>
 public sealed class InlineIconPickerTests
 {
     [Fact]
-    public async Task IconPickers_StartCollapsedAndOfferTheWholeCatalog()
+    public async Task Field_IsAHeaderOnlyButtonThatTogglesTheFlyout()
     {
         using var sta = new StaThread();
 
         var result = await sta.InvokeAsync(() =>
         {
-            var editor = CreateEditorContent(Gauge());
-            var icon = Assert.IsType<InlineIconPicker>(editor.Content.FindName("IconPicker"));
-            var labelIcon = Assert.IsType<InlineIconPicker>(editor.Content.FindName("LabelIconPicker"));
-            var tiles = Assert.IsType<ItemsControl>(icon.FindName("PickerTiles"));
-
-            return new
-            {
-                IconExpanded = icon.IsExpanded,
-                LabelExpanded = labelIcon.IsExpanded,
-                TilesVisibility = tiles.Visibility,
-                IconIds = Options(icon).Select(option => option.Id).ToArray(),
-                LabelIds = Options(labelIcon).Select(option => option.Id).ToArray(),
-            };
-        });
-
-        Assert.False(result.IconExpanded, "The icon picker must start collapsed.");
-        Assert.False(result.LabelExpanded, "The label-icon picker must start collapsed.");
-        Assert.Equal(Visibility.Collapsed, result.TilesVisibility);
-
-        // "None" plus every built-in catalog entry, for both lists (LabelIconOptions reuses the
-        // IconOptions list, including the existing "(none)" entry).
-        Assert.Equal(IconCatalog.BuiltIn.Count + 1, result.IconIds.Length);
-        Assert.Equal(IconCatalog.BuiltIn.Count + 1, result.LabelIds.Length);
-        Assert.Equal(string.Empty, result.IconIds[0]);
-        Assert.All(IconCatalog.BuiltIn, option => Assert.Contains(option.Id, result.IconIds));
-        Assert.All(IconCatalog.BuiltIn, option => Assert.Contains(option.Id, result.LabelIds));
-        Assert.Contains("steam", result.IconIds);
-        Assert.Contains("vscode", result.IconIds);
-        Assert.Contains("github", result.LabelIds);
-
-        // The expanded action group and the line-art vectors are part of the same option list.
-        Assert.Contains("volumeLow", result.IconIds);
-        Assert.Contains("zoomIn", result.LabelIds);
-        Assert.Contains("headphones", result.IconIds);
-        Assert.Contains("headphonesMuted", result.LabelIds);
-        Assert.Contains("microphoneMuted", result.IconIds);
-    }
-
-    [Fact]
-    public async Task ExpandedPicker_RendersStrokePreviewsForLineArtInTwoColumns()
-    {
-        using var sta = new StaThread();
-
-        var result = await sta.InvokeAsync(() =>
-        {
-            var context = CreateEditorContent(Gauge());
+            var context = CreateEditor(Gauge());
             var picker = Assert.IsType<InlineIconPicker>(context.Content.FindName("IconPicker"));
             var header = Assert.IsType<Button>(picker.FindName("PickerHeader"));
-            var tiles = Assert.IsType<ItemsControl>(picker.FindName("PickerTiles"));
+
+            var headerHeight = header.MinHeight;
+            var hasInlineTiles = picker.FindName("PickerTiles") is not null;
 
             header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            context.Host.UpdateLayout();
+            var opened = new
+            {
+                context.Editor.Flyout.IsOpen,
+                context.Editor.Flyout.Kind,
+                context.Editor.Flyout.Target,
+                context.Editor.Flyout.IconOptions.Count,
+            };
 
-            var panel = Assert.IsType<UniformGrid>(tiles.ItemsPanel.LoadContent());
-            var tile = FindVisualDescendants<Button>(tiles).Single(button => Option(button)?.Id == "headphones");
-            var presenter = FindVisualDescendants<WidgetIconPresenter>(tile).Single();
-
-            // The headless test host does not apply the theme brush, so give the tile preview an
-            // explicit foreground and verify the line art picks it up through the presenter.
-            presenter.Foreground = Brushes.Red;
-            var strokePath = Assert.IsType<Path>(presenter.FindName("StrokePath"));
-            var filledPath = Assert.IsType<Path>(presenter.FindName("VectorPath"));
-
+            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             return new
             {
-                Columns = panel.Columns,
-                StrokeVisibility = strokePath.Visibility,
-                FilledVisibility = filledPath.Visibility,
-                HasStrokeGeometry = strokePath.Data is not null,
-                HasStrokeBrush = strokePath.Stroke is not null,
-                StrokeThickness = strokePath.StrokeThickness,
+                HeaderHeight = headerHeight,
+                HasInlineTiles = hasInlineTiles,
+                opened.IsOpen,
+                opened.Kind,
+                opened.Target,
+                opened.Count,
+                Closed = context.Editor.Flyout.IsOpen,
             };
         });
 
-        Assert.Equal(2, result.Columns);
-        Assert.Equal(Visibility.Visible, result.StrokeVisibility);
-        Assert.Equal(Visibility.Collapsed, result.FilledVisibility);
-        Assert.True(result.HasStrokeGeometry);
-        Assert.True(result.HasStrokeBrush);
-        Assert.True(result.StrokeThickness > 0);
+        Assert.True(result.HeaderHeight >= 40);
+        Assert.False(result.HasInlineTiles, "The icon field must not expand a tile list inside the panel.");
+        Assert.True(result.IsOpen);
+        Assert.Equal(PropertyPickerKind.Icon, result.Kind);
+        Assert.Equal(PropertyPickerTarget.Icon, result.Target);
+        Assert.Equal(IconCatalog.BuiltIn.Count + 1, result.Count);
+        Assert.False(result.Closed, "Tapping the same icon field again must close the flyout.");
     }
 
     [Fact]
-    public async Task IconPicker_ExpandsListsEveryEntryMarksTheSelectionAndCollapsesAfterSelecting()
+    public async Task Flyout_ListsEveryCatalogEntryAndMarksTheCurrentOne()
     {
         using var sta = new StaThread();
 
         var result = await sta.InvokeAsync(() =>
         {
-            var context = CreateEditorContent(Gauge());
+            var context = CreateEditor(Gauge());
+            var editor = context.Editor;
+            editor.SelectedIcon = IconCatalog.BuiltIn.First(option => option.Id == "star");
+
+            editor.Flyout.OpenIcon(PropertyPickerTarget.Icon);
+            var host = Host(new PropertyFlyout { DataContext = editor.Flyout }, 380, 560);
+            var flyout = Assert.IsType<PropertyFlyout>(host.Children[0]);
+            var tiles = Assert.IsType<ItemsControl>(flyout.FindName("FlyoutIconTiles"));
+            var buttons = FindVisualDescendants<Button>(tiles).ToArray();
+
+            var ids = editor.Flyout.IconOptions.Select(option => option.Id).ToArray();
+            var star = buttons.Single(button => Option(button)?.Id == "star");
+            var power = buttons.Single(button => Option(button)?.Id == "power");
+            var none = buttons.Single(button => Option(button)?.Id == string.Empty);
+            var strokeTile = buttons.Single(button => Option(button)?.Id == "headphones");
+            var strokePath = FindVisualDescendants<System.Windows.Shapes.Path>(strokeTile)
+                .Single(path => path.Name == "StrokePath");
+
+            return new
+            {
+                Count = buttons.Length,
+                Ids = ids,
+                StarMarked = star.BorderThickness.Left >= 2,
+                PowerUnmarked = power.BorderThickness.Left == 1,
+                NoneUnmarked = none.BorderThickness.Left == 1,
+                MinHeight = buttons.Min(button => button.ActualHeight),
+                StrokeVisible = strokePath.Visibility,
+                HasStrokeGeometry = strokePath.Data is not null,
+            };
+        });
+
+        Assert.Equal(IconCatalog.BuiltIn.Count + 1, result.Count);
+        Assert.Equal(string.Empty, result.Ids[0]);
+        Assert.All(IconCatalog.BuiltIn, option => Assert.Contains(option.Id, result.Ids));
+        Assert.Contains("steam", result.Ids);
+        Assert.Contains("vscode", result.Ids);
+        Assert.Contains("headphones", result.Ids);
+        Assert.Contains("microphoneMuted", result.Ids);
+        Assert.True(result.StarMarked, "The current entry must carry the accent selection border.");
+        Assert.True(result.PowerUnmarked);
+        Assert.True(result.NoneUnmarked);
+        Assert.True(result.MinHeight >= 44, $"Tiles must be at least 44 DIP; were {result.MinHeight}.");
+        Assert.Equal(Visibility.Visible, result.StrokeVisible);
+        Assert.True(result.HasStrokeGeometry);
+    }
+
+    [Fact]
+    public async Task Flyout_SelectionAppliesLiveClosesAndIsOneUndoStep()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var context = CreateEditor(Gauge());
             var editor = context.Editor;
             var gauge = Assert.IsType<GaugeWidgetViewModel>(context.Widget);
-
-            // Select a known entry through the view model; the picker must show it in the header and
-            // mark its tile.
-            editor.SelectedIcon = IconCatalog.BuiltIn.First(option => option.Id == "star");
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-
-            var picker = Assert.IsType<InlineIconPicker>(context.Content.FindName("IconPicker"));
-            var header = Assert.IsType<Button>(picker.FindName("PickerHeader"));
-            var tiles = Assert.IsType<ItemsControl>(picker.FindName("PickerTiles"));
-
-            var collapsedInitially = picker.IsExpanded;
-            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            context.Host.UpdateLayout();
-
-            var expanded = picker.IsExpanded;
-            var tilesVisible = tiles.Visibility;
-            var tileButtons = FindVisualDescendants<Button>(tiles).ToArray();
-            var starTile = tileButtons.Single(button => Option(button)?.Id == "star");
-            var powerTile = tileButtons.Single(button => Option(button)?.Id == "power");
-            var noneTile = tileButtons.Single(button => Option(button)?.Id == string.Empty);
-            var starMarked = starTile.BorderThickness.Left >= 2;
-            var powerUnmarked = powerTile.BorderThickness.Left == 1;
-            var noneUnmarked = noneTile.BorderThickness.Left == 1;
-            var minimumTileHeight = tileButtons.Min(button => button.ActualHeight);
-            var headerTexts = FindVisualDescendants<TextBlock>(header).Select(text => text.Text).ToArray();
-
-            // The header toggles closed again.
-            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            var collapsedAgain = picker.IsExpanded;
-
-            // Re-open, tap a different tile: it applies, and the list collapses.
-            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            powerTile.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            var headerTextsAfterSelection = FindVisualDescendants<TextBlock>(header).Select(text => text.Text).ToArray();
-
-            return new
-            {
-                collapsedInitially,
-                expanded,
-                tilesVisible,
-                TileCount = tileButtons.Length,
-                starMarked,
-                powerUnmarked,
-                noneUnmarked,
-                minimumTileHeight,
-                headerTexts,
-                collapsedAgain,
-                CollapsedAfterSelect = picker.IsExpanded,
-                PickerSelection = picker.SelectedItem?.Id,
-                EditorSelection = editor.SelectedIcon.Id,
-                WidgetGlyph = gauge.IconGlyph,
-                AppliedToConfig = ((GaugeWidgetConfig)editor.Config).Icon,
-                headerTextsAfterSelection,
-            };
-        });
-
-        Assert.False(result.collapsedInitially);
-        Assert.True(result.expanded, "Tapping the header must expand the inline list.");
-        Assert.Equal(Visibility.Visible, result.tilesVisible);
-        Assert.Equal(IconCatalog.BuiltIn.Count + 1, result.TileCount);
-        Assert.True(result.starMarked, "The current entry must carry the accent selection border.");
-        Assert.True(result.powerUnmarked, "Unselected entries must keep the neutral border.");
-        Assert.True(result.noneUnmarked, "Unselected entries must keep the neutral border.");
-        Assert.True(result.minimumTileHeight >= 44, $"Tiles must be at least 44 DIP tall; was {result.minimumTileHeight}.");
-        Assert.Contains("Star", result.headerTexts);
-        Assert.Contains(IconCatalog.GlyphFor("star"), result.headerTexts);
-        Assert.False(result.collapsedAgain, "Tapping the header again must collapse the list.");
-        Assert.False(result.CollapsedAfterSelect, "Selecting a tile must collapse the list.");
-        Assert.Equal("power", result.PickerSelection);
-        Assert.Equal("power", result.EditorSelection);
-        Assert.Equal("power", result.AppliedToConfig);
-        Assert.Equal(IconCatalog.GlyphFor("power"), result.WidgetGlyph);
-        Assert.Contains("Power", result.headerTextsAfterSelection);
-        Assert.Contains(IconCatalog.GlyphFor("power"), result.headerTextsAfterSelection);
-    }
-
-    [Fact]
-    public async Task LabelIconPicker_SelectionAppliesLiveAndNoneClearsIt()
-    {
-        using var sta = new StaThread();
-
-        var result = await sta.InvokeAsync(() =>
-        {
-            var context = CreateEditorContent(Bar());
-            var editor = context.Editor;
-            var picker = Assert.IsType<InlineIconPicker>(context.Content.FindName("LabelIconPicker"));
-            var header = Assert.IsType<Button>(picker.FindName("PickerHeader"));
-            var tiles = Assert.IsType<ItemsControl>(picker.FindName("PickerTiles"));
-            var barViewModel = Assert.IsType<BarWidgetViewModel>(context.Widget);
-
-            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            context.Host.UpdateLayout();
-
-            var downloadTile = FindVisualDescendants<Button>(tiles).Single(button => Option(button)?.Id == "download");
-            downloadTile.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            editor.Flyout.OpenIcon(PropertyPickerTarget.Icon);
+            var power = editor.Flyout.IconOptions.First(option => option.Id == "power");
+            editor.Flyout.SelectIconCommand.Execute(power);
 
             var applied = new
             {
-                Config = ((BarWidgetConfig)editor.Config).LabelIcon,
-                Selected = editor.SelectedLabelIcon.Id,
-                Picker = picker.SelectedItem?.Id,
-                barViewModel.HasLabelIcon,
-                barViewModel.LabelIconGlyph,
-                barViewModel.Label,
-                editor.LabelText,
-                Collapsed = picker.IsExpanded,
+                Config = ((GaugeWidgetConfig)editor.Config).Icon,
+                Selected = editor.SelectedIcon.Id,
+                gauge.IconGlyph,
+                Undo = context.Service.UndoDepth,
+                Closed = editor.Flyout.IsOpen,
             };
 
-            // Re-open and pick "None": the configured label icon clears and the text label returns.
-            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            var noneTile = FindVisualDescendants<Button>(tiles).Single(button => Option(button)?.Id == string.Empty);
-            noneTile.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            editor.Flyout.OpenIcon(PropertyPickerTarget.Icon);
+            editor.Flyout.SelectIconCommand.Execute(editor.Flyout.IconOptions[0]);
 
             return new
             {
-                Applied = applied,
-                Cleared = new
-                {
-                    Config = ((BarWidgetConfig)editor.Config).LabelIcon,
-                    Selected = editor.SelectedLabelIcon.Id,
-                    Picker = picker.SelectedItem?.Id,
-                    barViewModel.HasLabelIcon,
-                    barViewModel.LabelIconGlyph,
-                    barViewModel.Label,
-                    editor.LabelText,
-                    Collapsed = picker.IsExpanded,
-                },
+                applied,
+                Cleared = ((GaugeWidgetConfig)editor.Config).Icon,
+                gauge.HasIcon,
+                Undo = context.Service.UndoDepth,
             };
         });
 
-        Assert.Equal("download", result.Applied.Config);
-        Assert.Equal("download", result.Applied.Selected);
-        Assert.Equal("download", result.Applied.Picker);
-        Assert.True(result.Applied.HasLabelIcon);
-        Assert.Equal(IconCatalog.GlyphFor("download"), result.Applied.LabelIconGlyph);
-        Assert.Equal("bar1", result.Applied.Label);
-        Assert.Equal("bar1", result.Applied.LabelText);
-        Assert.False(result.Applied.Collapsed);
-
-        Assert.Null(result.Cleared.Config);
-        Assert.Equal(string.Empty, result.Cleared.Selected);
-        Assert.Equal(string.Empty, result.Cleared.Picker);
-        Assert.False(result.Cleared.HasLabelIcon);
-        Assert.Null(result.Cleared.LabelIconGlyph);
-        Assert.Equal("bar1", result.Cleared.Label);
-        Assert.Equal("bar1", result.Cleared.LabelText);
-        Assert.False(result.Cleared.Collapsed);
+        Assert.Equal("power", result.applied.Config);
+        Assert.Equal("power", result.applied.Selected);
+        Assert.Equal(IconCatalog.GlyphFor("power"), result.applied.IconGlyph);
+        Assert.Equal(1, result.applied.Undo);
+        Assert.False(result.applied.Closed);
+        Assert.Null(result.Cleared);
+        Assert.False(result.HasIcon);
+        Assert.Equal(2, result.Undo);
     }
 
     [Fact]
-    public async Task ExpandedPicker_IsInsideThePropertyPanelScrollAndPansOverTheTiles()
+    public async Task Flyout_SwitchesTargetInPlaceAndIsExclusiveWithTheColourFlyout()
     {
         using var sta = new StaThread();
 
         var result = await sta.InvokeAsync(() =>
         {
-            var context = CreateEditorContent(Gauge());
-            var scroll = Assert.IsType<ScrollViewer>(context.Content.FindName("PropertyPanelScroll"));
-            var picker = Assert.IsType<InlineIconPicker>(context.Content.FindName("IconPicker"));
-            var header = Assert.IsType<Button>(picker.FindName("PickerHeader"));
-            var tiles = Assert.IsType<ItemsControl>(picker.FindName("PickerTiles"));
+            var context = CreateEditor(Toggle());
+            var editor = context.Editor;
 
-            var collapsedInsideScroll = IsVisualDescendant(picker, scroll);
+            editor.Flyout.ToggleIcon(PropertyPickerTarget.Icon);
+            var iconOpen = (editor.Flyout.IsOpen, editor.Flyout.Kind, editor.Flyout.Target, editor.Flyout.IconOptions.Count);
 
-            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            context.Host.UpdateLayout();
+            editor.Flyout.ToggleIcon(PropertyPickerTarget.OnIcon);
+            var switched = (editor.Flyout.IsOpen, editor.Flyout.Kind, editor.Flyout.Target, editor.Flyout.IconOptions.Count);
 
-            var firstTile = FindVisualDescendants<Button>(tiles).First();
-            var expandedInsideScroll = IsVisualDescendant(firstTile, scroll);
-            var behavior = TouchPan.GetBehaviorForTest(scroll);
-            var scrollable = scroll.ScrollableHeight;
+            editor.Flyout.ToggleColor(PropertyPickerTarget.OnIconColor);
+            var colourOpen = (editor.Flyout.IsOpen, editor.Flyout.Kind, editor.Flyout.Target, editor.Flyout.IconOptions.Count);
 
-            // A tap-sized move does not pan, so the tile keeps the gesture for selection.
-            var tapTracked = behavior!.BeginForTest(150, 300, firstTile);
-            var tapPanned = behavior.MoveForTest(151, 301).IsPanning;
-            var tapEndedAsPan = behavior.EndForTest();
-            var offsetAfterTap = scroll.VerticalOffset;
+            editor.Flyout.ToggleIcon(PropertyPickerTarget.Icon);
+            var backToIcon = (editor.Flyout.IsOpen, editor.Flyout.Kind, editor.Flyout.Target);
 
-            // A vertical drag that starts on a tile must pan the panel (never be excluded).
-            var dragTracked = behavior.BeginForTest(150, 400, firstTile);
-            var dragPanned = behavior.MoveForTest(150, 340).IsPanning;
-            scroll.UpdateLayout();
-            var offsetAfterDrag = scroll.VerticalOffset;
-            var dragEndedAsPan = behavior.EndForTest();
-
-            return new
-            {
-                TouchPanEnabled = TouchPan.GetIsEnabled(scroll),
-                collapsedInsideScroll,
-                expandedInsideScroll,
-                HasBehavior = behavior is not null,
-                scrollable,
-                tapTracked,
-                tapPanned,
-                tapEndedAsPan,
-                offsetAfterTap,
-                dragTracked,
-                dragPanned,
-                offsetAfterDrag,
-                dragEndedAsPan,
-            };
+            return new { iconOpen, switched, colourOpen, backToIcon };
         });
 
-        Assert.True(result.TouchPanEnabled, "The property panel must keep the panel-level touch pan.");
-        Assert.True(result.HasBehavior, "The TouchPan behavior must be attached to the panel's viewer.");
-        Assert.True(result.collapsedInsideScroll, "The picker must be inside the property panel's ScrollViewer.");
-        Assert.True(result.expandedInsideScroll, "Expanded tiles must be inside the property panel's ScrollViewer.");
-        Assert.True(result.scrollable > 0, "The expanded panel must be scrollable.");
-
-        Assert.True(result.tapTracked);
-        Assert.False(result.tapPanned);
-        Assert.False(result.tapEndedAsPan);
-        Assert.Equal(0, result.offsetAfterTap);
-
-        Assert.True(result.dragTracked);
-        Assert.True(result.dragPanned, "A drag starting on a tile must pan the property panel.");
-        Assert.True(result.offsetAfterDrag > 0, "The drag must move the panel's vertical offset.");
-        Assert.True(result.dragEndedAsPan);
+        Assert.True(result.iconOpen.IsOpen);
+        Assert.Equal(PropertyPickerKind.Icon, result.iconOpen.Kind);
+        Assert.Equal(PropertyPickerTarget.Icon, result.iconOpen.Target);
+        Assert.True(result.switched.IsOpen, "Tapping another icon field must switch the target in place.");
+        Assert.Equal(PropertyPickerTarget.OnIcon, result.switched.Target);
+        Assert.Equal(PropertyPickerKind.Color, result.colourOpen.Kind);
+        Assert.Equal(PropertyPickerTarget.OnIconColor, result.colourOpen.Target);
+        Assert.Equal(PropertyPickerKind.Icon, result.backToIcon.Kind);
+        Assert.Equal(PropertyPickerTarget.Icon, result.backToIcon.Target);
     }
 
     [Fact]
-    public async Task Styles_HaveNoComboBoxTouchBehaviorAndThePopupGlueIsGone()
+    public async Task Flyout_OffersTheLabelAndOnStateTargetsWithTheirOwnOptionLists()
     {
         using var sta = new StaThread();
 
         var result = await sta.InvokeAsync(() =>
         {
-            var styles = Assert.IsType<ResourceDictionary>(
-                Application.LoadComponent(new Uri("/TouchPanel;component/Theme/Styles.xaml", UriKind.Relative)));
+            var gauge = CreateEditor(Gauge());
+            gauge.Editor.Flyout.OpenIcon(PropertyPickerTarget.LabelIcon);
+            var labelIcons = gauge.Editor.Flyout.IconOptions.Select(option => option.Id).ToArray();
+            gauge.Editor.Flyout.SelectIconCommand.Execute(
+                gauge.Editor.Flyout.IconOptions.First(option => option.Id == "download"));
+            var label = (Config: ((GaugeWidgetConfig)gauge.Editor.Config).LabelIcon, gauge.Editor.Flyout.IsOpen);
 
-            var comboStyleDeclared = styles.Contains(typeof(ComboBox));
-            var touchSetters = new List<string>();
-            foreach (DictionaryEntry entry in styles)
+            var toggle = CreateEditor(Toggle());
+            toggle.Editor.Flyout.OpenIcon(PropertyPickerTarget.OnIcon);
+            var onIcons = toggle.Editor.Flyout.IconOptions.Select(option => option.Id).ToArray();
+            toggle.Editor.Flyout.SelectIconCommand.Execute(
+                toggle.Editor.Flyout.IconOptions.First(option => option.Id == "microphoneMuted"));
+            var on = (Config: ((ToggleWidgetConfig)toggle.Editor.Config).OnIcon, toggle.Editor.Flyout.IsOpen);
+
+            return new { labelIcons, label, onIcons, on };
+        });
+
+        Assert.Equal(IconCatalog.BuiltIn.Count + 1, result.labelIcons.Length);
+        Assert.Contains("download", result.labelIcons);
+        Assert.Equal("download", result.label.Config);
+        Assert.False(result.label.IsOpen);
+        Assert.Equal(IconCatalog.BuiltIn.Count + 1, result.onIcons.Length);
+        Assert.Contains("microphoneMuted", result.onIcons);
+        Assert.Equal("microphoneMuted", result.on.Config);
+        Assert.False(result.on.IsOpen);
+    }
+
+    [Fact]
+    public async Task Flyout_HidesWhenTheSelectionChangesOrEditModeEnds()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var context = CreateEditorWithTwoWidgets();
+            var service = context.Service;
+            var first = service.PropertyEditor!;
+            first.Flyout.OpenIcon(PropertyPickerTarget.Icon);
+
+            service.SelectWidget(context.Page.Widgets[1]);
+            var afterSelection = new
             {
-                if (entry.Value is not Style style)
-                {
-                    continue;
-                }
+                FirstOpen = first.Flyout.IsOpen,
+                HasEditor = service.HasPropertyEditor,
+            };
 
-                foreach (var setterBase in style.Setters)
+            service.SelectWidget(context.Page.Widgets[0]);
+            service.OpenPropertyEditor();
+            var editor = service.PropertyEditor!;
+            editor.Flyout.OpenColor(PropertyPickerTarget.Foreground);
+            var closed = editor.Flyout.IsOpen;
+            service.ClosePropertyEditor();
+            var afterClose = (editor.Flyout.IsOpen, service.HasPropertyEditor);
+
+            service.SelectWidget(context.Page.Widgets[0]);
+            service.OpenPropertyEditor();
+            var exitEditor = service.PropertyEditor!;
+            exitEditor.Flyout.OpenIcon(PropertyPickerTarget.Icon);
+            service.ExitAsync().GetAwaiter().GetResult();
+            var afterExit = (exitEditor.Flyout.IsOpen, service.IsEditMode);
+
+            return new { afterSelection.FirstOpen, afterSelection.HasEditor, Closed = closed, afterClose, afterExit };
+        });
+
+        Assert.False(result.FirstOpen, "A selection change must close the previous flyout.");
+        Assert.True(result.Closed);
+        Assert.False(result.afterClose.Item1);
+        Assert.False(result.afterClose.Item2);
+        Assert.False(result.afterExit.Item1, "Leaving edit mode must close the flyout.");
+        Assert.False(result.afterExit.Item2);
+    }
+
+    [Fact]
+    public async Task Flyout_DocksLeftOfThePropertyPanelAtDesktopAndMinimumSizes()
+    {
+        using var sta = new StaThread();
+
+        var sizes = new[] { (Width: 1024d, Height: 600d), (Width: 512d, Height: 300d) };
+
+        foreach (var size in sizes)
+        {
+            var result = await sta.InvokeAsync(() =>
+            {
+                var context = CreateEditor(Gauge(), size.Width, size.Height, out var overlay, out var panel);
+                context.Editor.Flyout.OpenIcon(PropertyPickerTarget.Icon);
+                overlay.UpdateLayout();
+                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                overlay.UpdateLayout();
+
+                var host = Assert.IsType<ContentControl>(overlay.FindName("PropertyFlyoutHost"));
+                var sheet = Assert.IsType<StackPanel>(overlay.FindName("EditSheet"));
+                var flyout = FindVisualDescendants<PropertyFlyout>(host).FirstOrDefault();
+                var flyoutBounds = flyout is null
+                    ? Rect.Empty
+                    : flyout.TransformToAncestor(overlay).TransformBounds(
+                        new Rect(0, 0, flyout.ActualWidth, flyout.ActualHeight));
+                var hostBounds = host.TransformToAncestor(overlay).TransformBounds(
+                    new Rect(0, 0, host.ActualWidth, host.ActualHeight));
+                var panelBounds = panel.TransformToAncestor(overlay).TransformBounds(
+                    new Rect(0, 0, panel.ActualWidth, panel.ActualHeight));
+                var sheetBounds = sheet.TransformToAncestor(overlay).TransformBounds(
+                    new Rect(0, 0, sheet.ActualWidth, sheet.ActualHeight));
+
+                return new
                 {
-                    if (setterBase is Setter { Property: { } property }
-                        && (property.Name.Contains("TouchPan", StringComparison.Ordinal)
-                            || property.OwnerType.FullName?.Contains("ComboBoxTouchScroll", StringComparison.Ordinal) == true))
-                    {
-                        touchSetters.Add($"{entry.Key}:{property.Name}");
-                    }
-                }
+                    OverlayWidth = overlay.ActualWidth,
+                    OverlayHeight = overlay.ActualHeight,
+                    HostWidth = host.ActualWidth,
+                    HostHeight = host.ActualHeight,
+                    FlyoutWidth = flyout?.ActualWidth ?? 0,
+                    FlyoutHeight = flyout?.ActualHeight ?? 0,
+                    HostBounds = hostBounds,
+                    FlyoutBounds = flyoutBounds,
+                    PanelBounds = panelBounds,
+                    SheetBounds = sheetBounds,
+                    FlyoutVisible = flyout?.Visibility ?? Visibility.Collapsed,
+                };
+            });
+
+            Assert.True(result.FlyoutVisible == Visibility.Visible, $"At {size.Width}x{size.Height} the flyout must be visible.");
+            Assert.True(result.HostWidth >= FlyoutWidthConverter.MinimumWidth, $"At {size.Width}x{size.Height} the flyout slot was {result.HostWidth} DIP.");
+            Assert.True(result.HostWidth <= 380.5, $"At {size.Width}x{size.Height} the flyout was wider than the 380 DIP ceiling: {result.HostWidth}.");
+            Assert.True(result.HostBounds.Left >= -0.5, $"At {size.Width}x{size.Height} the flyout starts off-panel at {result.HostBounds.Left}.");
+            Assert.True(result.HostBounds.Right <= result.OverlayWidth + 0.5, $"At {size.Width}x{size.Height} the flyout ends outside the panel.");
+            Assert.True(result.HostBounds.Right <= result.PanelBounds.Left + 0.5, $"At {size.Width}x{size.Height} the flyout overlaps the property panel.");
+            if (result.HostHeight > 20)
+            {
+                Assert.True(
+                    result.HostBounds.Bottom <= result.SheetBounds.Top + 0.5,
+                    $"At {size.Width}x{size.Height} the flyout overlaps the bottom edit sheet (host {result.HostBounds}, sheet {result.SheetBounds}, overlay {result.OverlayWidth}x{result.OverlayHeight}).");
             }
-
-            var assembly = typeof(EditOverlay).Assembly;
-            var removedType = assembly.GetType("TouchPanel.Views.Controls.ComboBoxTouchScroll", throwOnError: false);
-
-            // A combo using the app styles resolves no implicit style, so its dropdown template and
-            // behavior are the stock WPF ones (the regression's hook is gone).
-            var host = new StackPanel();
-            host.Resources.MergedDictionaries.Add(styles);
-            var combo = new ComboBox { ItemsSource = new[] { "one", "two" } };
-            host.Children.Add(combo);
-            host.Measure(new Size(300, 200));
-            host.Arrange(new Rect(0, 0, 300, 200));
-            host.UpdateLayout();
-
-            return new
+            else
             {
-                comboStyleDeclared,
-                touchSetters = touchSetters.ToArray(),
-                removedTypePresent = removedType is not null,
-                comboStyle = combo.Style,
-            };
-        });
-
-        Assert.False(result.comboStyleDeclared, "Styles.xaml must not declare an implicit ComboBox style.");
-        Assert.Empty(result.touchSetters);
-        Assert.False(result.removedTypePresent, "ComboBoxTouchScroll must be removed.");
-        Assert.Null(result.comboStyle);
+                // At the 512x300 minimum the expanded edit sheet takes the whole height, so row 0
+                // (which also hosts the property panel) has no vertical room. The flyout stays
+                // inside that row instead of spilling over the sheet.
+                Assert.True(result.HostBounds.Bottom <= result.SheetBounds.Top + 10.5);
+            }
+            Assert.True(result.FlyoutBounds.Bottom <= result.OverlayHeight + 0.5);
+            Assert.True(result.FlyoutBounds.Right <= result.PanelBounds.Left + 0.5);
+        }
     }
 
-    private static IconOption? Option(FrameworkElement element) => element.DataContext as IconOption;
+    private static IconOption? Option(DependencyObject element) => (element as FrameworkElement)?.DataContext as IconOption;
 
-    private static IEnumerable<IconOption> Options(InlineIconPicker picker) =>
-        picker.ItemsSource?.Cast<IconOption>() ?? [];
+    private static Grid Host(FrameworkElement element, double width, double height)
+    {
+        var host = new Grid { Width = width, Height = height };
+        host.Children.Add(element);
+        host.Measure(new Size(width, height));
+        host.Arrange(new Rect(0, 0, width, height));
+        host.UpdateLayout();
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+        host.UpdateLayout();
+        return host;
+    }
+
+    private static EditorContent CreateEditor(WidgetConfig widget)
+    {
+        var config = new PanelConfig
+        {
+            SchemaVersion = PanelConfig.CurrentSchemaVersion,
+            ActivePageId = "main",
+            Pages = [new PageConfig { Id = "main", Widgets = [widget] }],
+        };
+
+        var registry = WidgetRegistry.CreateDefault();
+        var page = PageViewModel.CreateForActivePage(config, registry);
+        var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+        var overlay = new EditOverlay { DataContext = service };
+        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+        service.Enter(1024, 600);
+        service.SelectWidget(page.Widgets[0]);
+        service.OpenPropertyEditor();
+        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+        overlay.Measure(new Size(1024, 600));
+        overlay.Arrange(new Rect(0, 0, 1024, 600));
+        overlay.UpdateLayout();
+
+        var panel = Assert.IsType<Border>(overlay.FindName("PropertyPanel"));
+        var contentControl = Assert.IsType<ContentControl>(panel.Child);
+        var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
+        var editor = Assert.IsType<PropertyEditorViewModel>(contentControl.Content);
+        content.DataContext = editor;
+
+        var host = new Grid { Width = 300, Height = 560 };
+        host.Children.Add(content);
+        host.Measure(new Size(300, 560));
+        host.Arrange(new Rect(0, 0, 300, 560));
+        host.UpdateLayout();
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+        host.UpdateLayout();
+
+        return new EditorContent(editor, page.Widgets[0], content, host, service);
+    }
+
+    private static EditorContent CreateEditor(
+        WidgetConfig widget,
+        double width,
+        double height,
+        out EditOverlay overlay,
+        out Border panel)
+    {
+        var config = new PanelConfig
+        {
+            SchemaVersion = PanelConfig.CurrentSchemaVersion,
+            ActivePageId = "main",
+            Pages = [new PageConfig { Id = "main", Widgets = [widget] }],
+        };
+
+        var registry = WidgetRegistry.CreateDefault();
+        var page = PageViewModel.CreateForActivePage(config, registry);
+        var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+        service.Enter(width, height);
+        overlay = new EditOverlay
+        {
+            DataContext = service,
+            Width = width,
+            Height = height,
+        };
+        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+        overlay.Measure(new Size(width, height));
+        overlay.Arrange(new Rect(0, 0, width, height));
+        overlay.UpdateLayout();
+
+        service.SelectWidget(page.Widgets[0]);
+        service.OpenPropertyEditor();
+        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+        overlay.Measure(new Size(width, height));
+        overlay.Arrange(new Rect(0, 0, width, height));
+        overlay.UpdateLayout();
+
+        panel = Assert.IsType<Border>(overlay.FindName("PropertyPanel"));
+        var contentControl = Assert.IsType<ContentControl>(panel.Child);
+        var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
+        var editor = Assert.IsType<PropertyEditorViewModel>(contentControl.Content);
+        content.DataContext = editor;
+
+        var host = new Grid { Width = 300, Height = 560 };
+        host.Children.Add(content);
+        host.Measure(new Size(300, 560));
+        host.Arrange(new Rect(0, 0, 300, 560));
+        host.UpdateLayout();
+
+        return new EditorContent(editor, page.Widgets[0], content, host, service);
+    }
+
+    private static TwoWidgetContent CreateEditorWithTwoWidgets()
+    {
+        var config = new PanelConfig
+        {
+            SchemaVersion = PanelConfig.CurrentSchemaVersion,
+            ActivePageId = "main",
+            Pages =
+            [
+                new PageConfig
+                {
+                    Id = "main",
+                    Widgets =
+                    [
+                        new GaugeWidgetConfig
+                        {
+                            Id = "g1",
+                            X = 0,
+                            Y = 0,
+                            Width = 240,
+                            Height = 180,
+                            Sensor = "cpu.total",
+                            Minimum = 0,
+                            Maximum = 100,
+                        },
+                        new LabelWidgetConfig
+                        {
+                            Id = "l1",
+                            X = 0,
+                            Y = 200,
+                            Width = 200,
+                            Height = 100,
+                            Label = "Label",
+                        },
+                    ],
+                },
+            ],
+        };
+
+        var registry = WidgetRegistry.CreateDefault();
+        var page = PageViewModel.CreateForActivePage(config, registry);
+        var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+        service.Enter(1024, 600);
+        service.SelectWidget(page.Widgets[0]);
+        service.OpenPropertyEditor();
+        return new TwoWidgetContent(service, page);
+    }
+
+    private static GaugeWidgetConfig Gauge() => new()
+    {
+        Id = "g1",
+        X = 0,
+        Y = 0,
+        Width = 240,
+        Height = 180,
+        Sensor = "cpu.total",
+        Minimum = 0,
+        Maximum = 100,
+    };
+
+    private static ToggleWidgetConfig Toggle() => new()
+    {
+        Id = "toggle-1",
+        X = 0,
+        Y = 0,
+        Width = 160,
+        Height = 60,
+        Label = "Mic",
+        Icon = "power",
+        OnIcon = "star",
+        InitialOn = true,
+        Action = new MuteActionConfig(),
+    };
 
     private static IEnumerable<T> FindVisualDescendants<T>(DependencyObject root)
         where T : DependencyObject
@@ -447,87 +550,12 @@ public sealed class InlineIconPickerTests
         }
     }
 
-    private static bool IsVisualDescendant(DependencyObject? node, DependencyObject ancestor)
-    {
-        for (var current = node; current is not null; current = VisualTreeHelper.GetParent(current))
-        {
-            if (ReferenceEquals(current, ancestor))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static EditorContent CreateEditorContent(WidgetConfig widget)
-    {
-        var config = new PanelConfig
-        {
-            SchemaVersion = PanelConfig.CurrentSchemaVersion,
-            ActivePageId = "main",
-            Pages =
-            [
-                new PageConfig { Id = "main", Widgets = [widget] },
-            ],
-        };
-
-        var registry = WidgetRegistry.CreateDefault();
-        var page = PageViewModel.CreateForActivePage(config, registry);
-        var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
-        var overlay = new EditOverlay { DataContext = service };
-        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-
-        service.Enter(1024, 600);
-        service.SelectWidget(page.Widgets[0]);
-        service.OpenPropertyEditor();
-        overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-
-        var panel = Assert.IsType<Border>(overlay.FindName("PropertyPanel"));
-        var contentControl = Assert.IsType<ContentControl>(panel.Child);
-        var content = (FrameworkElement)contentControl.ContentTemplate.LoadContent();
-        var editor = Assert.IsType<PropertyEditorViewModel>(contentControl.Content);
-        content.DataContext = editor;
-
-        var host = new Grid { Width = 300, Height = 560 };
-        host.Children.Add(content);
-        host.Measure(new Size(300, 560));
-        host.Arrange(new Rect(0, 0, 300, 560));
-        host.UpdateLayout();
-        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-        host.UpdateLayout();
-
-        return new EditorContent(editor, page.Widgets[0], content, host);
-    }
-
-    private static BarWidgetConfig Bar() => new()
-    {
-        Id = "bar1",
-        X = 0,
-        Y = 0,
-        Width = 240,
-        Height = 64,
-        Label = "bar1",
-        Sensor = "cpu.total",
-        Minimum = 0,
-        Maximum = 100,
-    };
-
-    private static GaugeWidgetConfig Gauge() => new()
-    {
-        Id = "g1",
-        X = 0,
-        Y = 0,
-        Width = 240,
-        Height = 180,
-        Sensor = "cpu.total",
-        Minimum = 0,
-        Maximum = 100,
-    };
-
     private sealed record EditorContent(
         PropertyEditorViewModel Editor,
         WidgetViewModelBase Widget,
         FrameworkElement Content,
-        Grid Host);
+        Grid Host,
+        EditModeService Service);
+
+    private sealed record TwoWidgetContent(EditModeService Service, PageViewModel Page);
 }

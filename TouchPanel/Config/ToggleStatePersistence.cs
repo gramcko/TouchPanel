@@ -285,6 +285,7 @@ public sealed class ToggleStatePersistence : IDisposable
                 SchemaVersion = _state.SchemaVersion,
                 CloseNotificationShown = _state.CloseNotificationShown,
                 ToggleStates = new Dictionary<string, bool>(_state.ToggleStates, StringComparer.Ordinal),
+                RecentColors = [.. _state.RecentColors],
             };
         }
 

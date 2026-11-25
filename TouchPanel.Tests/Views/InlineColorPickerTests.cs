@@ -1,7 +1,7 @@
+using System.Collections;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using TouchPanel.Actions;
@@ -19,33 +19,18 @@ using TouchPanel.Widgets;
 namespace TouchPanel.Tests.Views;
 
 /// <summary>
-/// User-requested inline colour picker: the shared palette (24 swatches, six per row), the collapsed
-/// swatch/hex header, inline expansion, exact-hex parsing (#RGB/#RRGGBB/#AARRGGBB), "None" clearing,
-/// live+undoable application, 40 DIP touch targets, panel fit, and the BAML wiring of all five
-/// appearance colour fields (widget foreground/background/accent/on-icon and the page background).
+/// User-requested colour picker: parsed hex values, the 40 DIP field button that opens the docked
+/// flyout, the flyout's swatch/None/hex apply path (one undo step per selection), the shared MRU
+/// palette order, and the BAML wiring. No picker expands inside the property panel any more.
 /// </summary>
 public sealed class InlineColorPickerTests
 {
     [Fact]
-    public void Palette_HasTwentyFourDistinctSwatchesInSixColumnOrder()
+    public void Palette_IsTheFixedTwentyFourSwatchDefault()
     {
         Assert.Equal(24, ColorPalette.Standard.Count);
-        Assert.Equal(0, ColorPalette.Standard.Count % ColorPalette.Columns);
-        Assert.Equal(6, ColorPalette.Columns);
-        Assert.All(ColorPalette.Standard, swatch =>
-        {
-            Assert.True(WidgetAppearance.TryNormalizeColor(swatch.Hex, out var normalized));
-            Assert.Equal(swatch.Hex, normalized);
-            Assert.False(string.IsNullOrWhiteSpace(swatch.Name));
-        });
-
-        Assert.Equal(
-            ColorPalette.Standard.Count,
-            ColorPalette.Standard.Select(swatch => swatch.Hex).Distinct(StringComparer.Ordinal).Count());
-
-        // Neutrals/theme darks first, then the accent blue and vivid hues.
-        Assert.Equal("#000000", ColorPalette.Standard[0].Hex);
-        Assert.Equal("#FFFFFF", ColorPalette.Standard[1].Hex);
+        Assert.Equal(RecentColorPalette.Capacity, ColorPalette.Standard.Count);
+        Assert.Contains(ColorPalette.Standard, swatch => swatch.Hex == "#000000");
         Assert.Contains(ColorPalette.Standard, swatch => swatch.Hex == "#0E1620");
         Assert.Contains(ColorPalette.Standard, swatch => swatch.Hex == "#3D7EFF");
         Assert.Contains(ColorPalette.Standard, swatch => swatch.Name == "Red");
@@ -80,223 +65,199 @@ public sealed class InlineColorPickerTests
     }
 
     [Fact]
-    public async Task Picker_StartsCollapsedAndShowsTheCurrentSwatchAndValue()
+    public async Task Field_IsATouchSizedHeaderThatOpensTheFlyoutAndShowsTheSelection()
     {
         using var sta = new StaThread();
 
         var result = await sta.InvokeAsync(() =>
         {
-            var picker = new InlineColorPicker { SelectedHex = "#112233" };
-            var host = Host(picker, 270, 600);
-
+            var context = CreateEditor(Label());
+            var picker = Assert.IsType<InlineColorPicker>(context.Content.FindName("ForegroundPicker"));
             var header = Assert.IsType<Button>(picker.FindName("PickerHeader"));
-            var headerLabel = Assert.IsType<TextBlock>(picker.FindName("HeaderLabel"));
-            var swatch = Assert.IsType<Border>(picker.FindName("CurrentSwatch"));
-            var body = Assert.IsType<StackPanel>(picker.FindName("PickerBody"));
+            picker.SelectedHex = "#112233";
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
+            var before = new
+            {
+                HeaderHeight = header.MinHeight,
+                Label = Assert.IsType<TextBlock>(picker.FindName("HeaderLabel")).Text,
+                Swatch = (Assert.IsType<Border>(picker.FindName("CurrentSwatch")).Background as SolidColorBrush)?.Color,
+                Open = context.Editor.Flyout.IsOpen,
+            };
+
+            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            var afterOpen = new
+            {
+                Open = context.Editor.Flyout.IsOpen,
+                Kind = context.Editor.Flyout.Kind,
+                Target = context.Editor.Flyout.Target,
+            };
+
+            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             return new
             {
-                Expanded = picker.IsExpanded,
-                HeaderHeight = header.MinHeight,
-                Label = headerLabel.Text,
-                SwatchColor = (swatch.Background as SolidColorBrush)?.Color,
-                BodyVisibility = body.Visibility,
-                SwatchCount = picker.Swatches.Count,
-                TileCount = ((System.Collections.IEnumerable)Assert.IsType<ItemsControl>(
-                    picker.FindName("SwatchTiles")).ItemsSource!).Cast<object>().Count(),
-                Fits = picker.DesiredSize.Width <= 270,
+                before.HeaderHeight,
+                before.Label,
+                before.Swatch,
+                BeforeOpen = before.Open,
+                Opened = afterOpen.Open,
+                afterOpen.Kind,
+                afterOpen.Target,
+                Closed = context.Editor.Flyout.IsOpen,
+                HasInlineGrid = picker.FindName("SwatchTiles") is not null,
             };
         });
 
-        Assert.False(result.Expanded);
         Assert.True(result.HeaderHeight >= 40);
         Assert.Equal("#112233", result.Label);
-        Assert.Equal(Color.FromRgb(0x11, 0x22, 0x33), result.SwatchColor);
-        Assert.Equal(Visibility.Collapsed, result.BodyVisibility);
-        Assert.Equal(24, result.SwatchCount);
-        Assert.Equal(24, result.TileCount);
-        Assert.True(result.Fits, $"The picker must fit the 300 DIP panel: {result.Fits}.");
+        Assert.Equal(Color.FromRgb(0x11, 0x22, 0x33), result.Swatch);
+        Assert.False(result.BeforeOpen);
+        Assert.True(result.Opened);
+        Assert.Equal(PropertyPickerKind.Color, result.Kind);
+        Assert.Equal(PropertyPickerTarget.Foreground, result.Target);
+        Assert.False(result.Closed, "Tapping the same colour field again must close the flyout.");
+        Assert.False(result.HasInlineGrid, "The field must not host the swatch grid any more.");
     }
 
     [Fact]
-    public async Task Picker_ExpandsToTheSwatchGridAndAnOptionalNoneTile()
+    public async Task Flyout_SwatchAppliesTheExactHexAndClosesWithOneUndoStep()
     {
         using var sta = new StaThread();
 
         var result = await sta.InvokeAsync(() =>
         {
-            var plain = new InlineColorPicker { IsExpanded = true };
-            var host = Host(plain, 270, 600);
-            var tiles = Assert.IsType<ItemsControl>(plain.FindName("SwatchTiles"));
-            var countWithoutNone = tiles.ItemsSource.Cast<ColorSwatchOption>().Count();
+            var context = CreateEditor(Label());
+            var editor = context.Editor;
+            editor.Flyout.OpenColor(PropertyPickerTarget.Foreground);
+            var tile = editor.Flyout.ColorTiles.Single(option => option.Hex == "#FF4D4D");
+            editor.Flyout.SelectColorCommand.Execute(tile);
 
-            var optional = new InlineColorPicker { IsExpanded = true, AllowNone = true };
-            var optionalHost = Host(optional, 270, 600);
-            var optionalTiles = Assert.IsType<ItemsControl>(optional.FindName("SwatchTiles"));
-            var options = optionalTiles.ItemsSource.Cast<ColorSwatchOption>().ToArray();
-            optionalHost.UpdateLayout();
+            var first = new
+            {
+                Config = ((LabelWidgetConfig)editor.Config).Foreground,
+                Header = Assert.IsType<TextBlock>(Assert.IsType<InlineColorPicker>(
+                    context.Content.FindName("ForegroundPicker")).FindName("HeaderLabel")).Text,
+                Undo = context.Service.UndoDepth,
+                Open = editor.Flyout.IsOpen,
+                Inherited = editor.IsForegroundInherited,
+            };
 
-            var panel = Assert.IsType<UniformGrid>(optionalTiles.ItemsPanel.LoadContent());
-            var buttons = FindVisualDescendants<Button>(optionalTiles).ToArray();
+            editor.Flyout.OpenColor(PropertyPickerTarget.Foreground);
+            var second = editor.Flyout.ColorTiles.Single(option => option.Hex == "#14B8A6");
+            editor.Flyout.SelectColorCommand.Execute(second);
 
             return new
             {
-                CountWithoutNone = countWithoutNone,
-                WithNone = options.Length,
-                LastIsNone = options[^1].IsNone,
-                LastText = options[^1].DisplayText,
-                Columns = panel.Columns,
-                MinHeight = buttons.Min(button => button.MinHeight),
-                MinWidth = buttons.Min(button => button.MinWidth),
-                BodyVisibility = Assert.IsType<StackPanel>(optional.FindName("PickerBody")).Visibility,
+                first,
+                SecondConfig = ((LabelWidgetConfig)editor.Config).Foreground,
+                SecondUndo = context.Service.UndoDepth,
             };
         });
 
-        Assert.Equal(24, result.CountWithoutNone);
-        Assert.Equal(25, result.WithNone);
-        Assert.True(result.LastIsNone);
-        Assert.Equal("None", result.LastText);
-        Assert.Equal(6, result.Columns);
-        Assert.True(result.MinHeight >= 40, $"Swatches must be at least 40 DIP tall; were {result.MinHeight}.");
-        Assert.True(result.MinWidth >= 40, $"Swatches must be at least 40 DIP wide; were {result.MinWidth}.");
-        Assert.Equal(Visibility.Visible, result.BodyVisibility);
+        Assert.Equal("#FF4D4D", result.first.Config);
+        Assert.Equal("#FF4D4D", result.first.Header);
+        Assert.Equal(1, result.first.Undo);
+        Assert.False(result.first.Open);
+        Assert.False(result.first.Inherited);
+        Assert.Equal("#14B8A6", result.SecondConfig);
+        Assert.Equal(2, result.SecondUndo);
     }
 
     [Fact]
-    public async Task Picker_SelectingASwatchAppliesTheExactHexAndCollapses()
+    public async Task Flyout_NoneClearsTheOverrideAndCloses()
     {
         using var sta = new StaThread();
 
         var result = await sta.InvokeAsync(() =>
         {
-            var picker = new InlineColorPicker { IsExpanded = true };
-            var host = Host(picker, 270, 600);
-            var tiles = Assert.IsType<ItemsControl>(picker.FindName("SwatchTiles"));
+            var context = CreateEditor(Label());
+            var editor = context.Editor;
+            var widget = context.Widget;
+            editor.ForegroundText = "#FF4D4D";
 
-            var red = FindVisualDescendants<Button>(tiles)
-                .Single(button => (button.DataContext as ColorSwatchOption)?.Hex == "#FF4D4D");
-            red.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-
-            return new
-            {
-                picker.SelectedHex,
-                picker.IsExpanded,
-                Header = Assert.IsType<TextBlock>(picker.FindName("HeaderLabel")).Text,
-                Inherited = picker.IsInherited,
-            };
-        });
-
-        Assert.Equal("#FF4D4D", result.SelectedHex);
-        Assert.False(result.IsExpanded);
-        Assert.Equal("#FF4D4D", result.Header);
-        Assert.False(result.Inherited);
-    }
-
-    [Fact]
-    public async Task Picker_NoneClearsWhereAllowed()
-    {
-        using var sta = new StaThread();
-
-        var result = await sta.InvokeAsync(() =>
-        {
-            var picker = new InlineColorPicker
-            {
-                SelectedHex = "#112233",
-                AllowNone = true,
-                IsExpanded = true,
-            };
-            var host = Host(picker, 270, 600);
-            var tiles = Assert.IsType<ItemsControl>(picker.FindName("SwatchTiles"));
-
-            var none = FindVisualDescendants<Button>(tiles)
-                .Single(button => (button.DataContext as ColorSwatchOption)?.IsNone == true);
-            none.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            editor.Flyout.OpenColor(PropertyPickerTarget.Foreground);
+            var none = editor.Flyout.ColorTiles.Single(option => option.IsNone);
+            editor.Flyout.SelectColorCommand.Execute(none);
 
             return new
             {
-                picker.SelectedHex,
-                picker.IsInherited,
-                picker.IsExpanded,
-                Header = Assert.IsType<TextBlock>(picker.FindName("HeaderLabel")).Text,
+                Cleared = ((LabelWidgetConfig)editor.Config).Foreground,
+                WidgetBrush = widget.ForegroundBrush,
+                Inherited = editor.IsForegroundInherited,
+                Open = editor.Flyout.IsOpen,
             };
         });
 
-        Assert.Equal(string.Empty, result.SelectedHex);
-        Assert.True(result.IsInherited);
-        Assert.False(result.IsExpanded);
-        Assert.Equal("Inherited", result.Header);
+        Assert.Null(result.Cleared);
+        Assert.Null(result.WidgetBrush);
+        Assert.True(result.Inherited);
+        Assert.False(result.Open);
     }
 
     [Theory]
     [InlineData("#abc", "#AABBCC")]
     [InlineData("#123456", "#123456")]
     [InlineData("#80123456", "#80123456")]
-    public async Task Picker_HexInputCommitsThreeSixAndEightDigits(string input, string expected)
-    {
-        using var sta = new StaThread();
-
-        var selected = await sta.InvokeAsync(() =>
-        {
-            var picker = new InlineColorPicker { IsExpanded = true };
-            Host(picker, 270, 600);
-            var hex = Assert.IsType<TextBox>(picker.FindName("HexBox"));
-            hex.Text = input;
-
-            Assert.True(picker.CommitHex());
-            return picker.SelectedHex;
-        });
-
-        Assert.Equal(expected, selected);
-    }
-
-    [Fact]
-    public async Task Picker_InvalidHexIsRejectedWithFeedback()
+    public async Task Flyout_HexInputAppliesThreeSixAndEightDigits(string input, string expected)
     {
         using var sta = new StaThread();
 
         var result = await sta.InvokeAsync(() =>
         {
-            var picker = new InlineColorPicker { SelectedHex = "#112233", IsExpanded = true };
-            Host(picker, 270, 600);
-            var hex = Assert.IsType<TextBox>(picker.FindName("HexBox"));
-            var error = Assert.IsType<TextBlock>(picker.FindName("HexErrorText"));
-            hex.Text = "not-a-colour";
+            var context = CreateEditor(Label());
+            var editor = context.Editor;
+            editor.Flyout.OpenColor(PropertyPickerTarget.Foreground);
+            var host = Host(new PropertyFlyout { DataContext = editor.Flyout }, 380, 560);
+            var flyout = Assert.IsType<PropertyFlyout>(host.Children[0]);
+            Assert.IsType<TextBox>(flyout.FindName("FlyoutHexBox")).Text = input;
 
-            var committed = picker.CommitHex();
+            var committed = flyout.CommitHex();
+            return new { Committed = committed, editor.Flyout.SelectedHex, Config = ((LabelWidgetConfig)editor.Config).Foreground };
+        });
+
+        Assert.True(result.Committed);
+        Assert.Equal(expected, result.Config);
+        Assert.Equal(expected, result.SelectedHex);
+    }
+
+    [Fact]
+    public async Task Flyout_InvalidHexIsRejectedWithFeedbackAndKeepsTheValue()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var context = CreateEditor(Label());
+            var editor = context.Editor;
+            editor.ForegroundText = "#112233";
+            editor.Flyout.OpenColor(PropertyPickerTarget.Foreground);
+            var host = Host(new PropertyFlyout { DataContext = editor.Flyout }, 380, 560);
+            var flyout = Assert.IsType<PropertyFlyout>(host.Children[0]);
+            Assert.IsType<TextBox>(flyout.FindName("FlyoutHexBox")).Text = "not-a-colour";
+
+            var committed = flyout.CommitHex();
+            var error = Assert.IsType<TextBlock>(flyout.FindName("FlyoutHexError"));
 
             return new
             {
                 Committed = committed,
-                Selected = picker.SelectedHex,
-                ErrorText = error.Text,
-                ErrorVisibility = error.Visibility,
+                Config = ((LabelWidgetConfig)editor.Config).Foreground,
+                Error = error.Text,
+                Visible = error.Visibility,
+                Open = editor.Flyout.IsOpen,
             };
         });
 
         Assert.False(result.Committed);
-        Assert.Equal("#112233", result.Selected);
-        Assert.Equal(InlineColorPicker.InvalidColorMessage, result.ErrorText);
-        Assert.Equal(Visibility.Visible, result.ErrorVisibility);
+        Assert.Equal("#112233", result.Config);
+        Assert.Equal(PropertyPickerFlyoutViewModel.InvalidColorMessage, result.Error);
+        Assert.Equal(Visibility.Visible, result.Visible);
+        Assert.True(result.Open, "An invalid value must leave the flyout open for correction.");
     }
 
     [Fact]
-    public void HexInputFilter_AllowsOnlyAFullWidthHexPrefix()
-    {
-        Assert.True(ColorPalette.IsAllowedHexInput(string.Empty));
-        Assert.True(ColorPalette.IsAllowedHexInput("#"));
-        Assert.True(ColorPalette.IsAllowedHexInput("#a"));
-        Assert.True(ColorPalette.IsAllowedHexInput("#AABBCC"));
-        Assert.True(ColorPalette.IsAllowedHexInput("#80112233"));
-        Assert.False(ColorPalette.IsAllowedHexInput("AABBCC"));
-        Assert.False(ColorPalette.IsAllowedHexInput("#GG"));
-        Assert.False(ColorPalette.IsAllowedHexInput("#112233445"));
-        Assert.False(ColorPalette.IsAllowedHexInput("##112233"));
-    }
-
-    [Fact]
-    public async Task WidgetPicker_AppliesLiveAndEachSelectionIsOneUndoStep()
+    public async Task Flyout_PaletteOrderReflectsTheMostRecentSelection()
     {
         using var sta = new StaThread();
 
@@ -304,118 +265,31 @@ public sealed class InlineColorPickerTests
         {
             var context = CreateEditor(Label());
             var editor = context.Editor;
-            var widget = context.Widget;
-            var picker = Assert.IsType<InlineColorPicker>(context.Content.FindName("ForegroundPicker"));
+            var palette = new RecentColorPalette();
+            var flyout = new PropertyPickerFlyoutViewModel(editor, palette);
 
-            Assert.Equal(editor.ForegroundText, picker.SelectedHex);
-            Assert.True(picker.IsInherited);
+            flyout.OpenColor(PropertyPickerTarget.Foreground);
+            var initialFirst = flyout.ColorTiles[0].Hex;
 
-            var first = SelectSwatch(context.Host, picker, "#FF4D4D");
-            var afterFirst = new
-            {
-                Config = ((LabelWidgetConfig)editor.Config).Foreground,
-                WidgetBrush = (widget.ForegroundBrush as SolidColorBrush)?.Color,
-                Undo = context.Service.UndoDepth,
-                Header = Assert.IsType<TextBlock>(picker.FindName("HeaderLabel")).Text,
-                Inherited = picker.IsInherited,
-            };
+            flyout.SelectColorCommand.Execute(flyout.ColorTiles.Single(tile => tile.Hex == "#14B8A6"));
+            flyout.OpenColor(PropertyPickerTarget.Background);
+            var afterFirst = flyout.ColorTiles.Select(tile => tile.Hex).ToArray();
 
-            var second = SelectSwatch(context.Host, picker, "#14B8A6");
-            var afterSecond = new
-            {
-                Config = ((LabelWidgetConfig)editor.Config).Foreground,
-                WidgetBrush = (widget.ForegroundBrush as SolidColorBrush)?.Color,
-                Undo = context.Service.UndoDepth,
-            };
+            flyout.SelectColorCommand.Execute(flyout.ColorTiles.Single(tile => tile.Hex == "#FF4D4D"));
+            flyout.OpenColor(PropertyPickerTarget.Foreground);
+            var afterSecond = flyout.ColorTiles.Select(tile => tile.Hex).ToArray();
 
-            return new { First = first, Second = second, AfterFirst = afterFirst, AfterSecond = afterSecond };
+            return new { initialFirst, afterFirst, afterSecond };
         });
 
-        Assert.True(result.First);
-        Assert.Equal("#FF4D4D", result.AfterFirst.Config);
-        Assert.Equal(Color.FromRgb(0xFF, 0x4D, 0x4D), result.AfterFirst.WidgetBrush);
-        Assert.Equal(1, result.AfterFirst.Undo);
-        Assert.Equal("#FF4D4D", result.AfterFirst.Header);
-        Assert.False(result.AfterFirst.Inherited);
-
-        Assert.True(result.Second);
-        Assert.Equal("#14B8A6", result.AfterSecond.Config);
-        Assert.Equal(Color.FromRgb(0x14, 0xB8, 0xA6), result.AfterSecond.WidgetBrush);
-        Assert.Equal(2, result.AfterSecond.Undo);
+        Assert.Equal(ColorPalette.Standard[0].Hex, result.initialFirst);
+        Assert.Equal("#14B8A6", result.afterFirst[0]);
+        Assert.Equal("#FF4D4D", result.afterSecond[0]);
+        Assert.Equal("#14B8A6", result.afterSecond[1]);
     }
 
     [Fact]
-    public async Task WidgetPicker_FollowsExternalEditorUpdatesAfterASelection()
-    {
-        using var sta = new StaThread();
-
-        var result = await sta.InvokeAsync(() =>
-        {
-            var context = CreateEditor(Label());
-            var editor = context.Editor;
-            var picker = Assert.IsType<InlineColorPicker>(context.Content.FindName("ForegroundPicker"));
-
-            SelectSwatch(context.Host, picker, "#FF4D4D");
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            var applied = picker.SelectedHex;
-
-            editor.ForegroundText = "#000000";
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-
-            return new { Applied = applied, Updated = picker.SelectedHex, Inherited = picker.IsInherited };
-        });
-
-        Assert.Equal("#FF4D4D", result.Applied);
-        Assert.Equal("#000000", result.Updated);
-        Assert.False(result.Inherited);
-    }
-
-    [Fact]
-    public async Task WidgetPicker_NoneClearsTheOverride()
-    {
-        using var sta = new StaThread();
-
-        var result = await sta.InvokeAsync(() =>
-        {
-            var context = CreateEditor(Label());
-            var editor = context.Editor;
-            var widget = context.Widget;
-            var picker = Assert.IsType<InlineColorPicker>(context.Content.FindName("ForegroundPicker"));
-
-            SelectSwatch(context.Host, picker, "#FF4D4D");
-            var applied = ((LabelWidgetConfig)editor.Config).Foreground;
-
-            var tiles = Assert.IsType<ItemsControl>(picker.FindName("SwatchTiles"));
-            Assert.IsType<Button>(picker.FindName("PickerHeader"))
-                .RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            context.Host.UpdateLayout();
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            context.Host.UpdateLayout();
-
-            var none = FindVisualDescendants<Button>(tiles)
-                .Single(button => (button.DataContext as ColorSwatchOption)?.IsNone == true);
-            none.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-
-            return new
-            {
-                Applied = applied,
-                Cleared = ((LabelWidgetConfig)editor.Config).Foreground,
-                WidgetBrush = widget.ForegroundBrush,
-                Inherited = editor.IsForegroundInherited,
-                picker.IsExpanded,
-            };
-        });
-
-        Assert.Equal("#FF4D4D", result.Applied);
-        Assert.Null(result.Cleared);
-        Assert.Null(result.WidgetBrush);
-        Assert.True(result.Inherited);
-        Assert.False(result.IsExpanded);
-    }
-
-    [Fact]
-    public async Task ToggleEditor_ShowsTheOnIconColourPickerAndAppliesItLive()
+    public async Task ToggleEditor_FlyoutAppliesTheOnIconColourLive()
     {
         using var sta = new StaThread();
 
@@ -430,7 +304,9 @@ public sealed class InlineColorPickerTests
             Assert.True(picker.AllowNone);
             Assert.True(picker.IsInherited);
 
-            SelectSwatch(context.Host, picker, "#FFB000");
+            editor.Flyout.OpenColor(PropertyPickerTarget.OnIconColor);
+            editor.Flyout.SelectColorCommand.Execute(
+                editor.Flyout.ColorTiles.Single(tile => tile.Hex == "#FFB000"));
 
             return new
             {
@@ -438,7 +314,6 @@ public sealed class InlineColorPickerTests
                 Supports = editor.SupportsOnIconColor,
                 Config = ((ToggleWidgetConfig)editor.Config).OnIconColor,
                 WidgetColor = (widget.OnIconBrush as SolidColorBrush)?.Color,
-                widget.DisplayIconBrush,
                 Undo = context.Service.UndoDepth,
                 Inherited = editor.IsOnIconColorInherited,
             };
@@ -448,13 +323,12 @@ public sealed class InlineColorPickerTests
         Assert.True(result.Supports);
         Assert.Equal("#FFB000", result.Config);
         Assert.Equal(Color.FromRgb(0xFF, 0xB0, 0x00), result.WidgetColor);
-        Assert.Equal(result.WidgetColor, (result.DisplayIconBrush as SolidColorBrush)?.Color);
         Assert.Equal(1, result.Undo);
         Assert.False(result.Inherited);
     }
 
     [Fact]
-    public async Task PagesEditor_PickerAppliesThePageBackground()
+    public async Task PagesEditor_BackgroundFlyoutAppliesThePageBackground()
     {
         using var sta = new StaThread();
 
@@ -485,11 +359,13 @@ public sealed class InlineColorPickerTests
                 },
             };
 
+            var palette = new RecentColorPalette();
             var viewModel = new PagesEditorViewModel(
                 settings,
                 new FakePageSwitchService(),
                 () => config,
-                imagePicker: new FakeImageFilePicker());
+                imagePicker: new FakeImageFilePicker(),
+                recentColors: palette);
             var view = new PagesEditorView { DataContext = viewModel };
             var host = new Grid { Width = 420, Height = 700 };
             host.Children.Add(view);
@@ -503,7 +379,10 @@ public sealed class InlineColorPickerTests
 
             var picker = Assert.IsType<InlineColorPicker>(view.FindName("PageBackgroundColorPicker"));
             Assert.True(picker.AllowNone);
-            SelectSwatch(host, picker, "#5B5BFF");
+
+            viewModel.ToggleBackgroundColorFlyoutCommand.Execute(null);
+            var flyout = viewModel.BackgroundColorFlyout;
+            flyout.SelectColorCommand.Execute(flyout.ColorTiles.Single(tile => tile.Hex == "#5B5BFF"));
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
             return new
@@ -511,16 +390,20 @@ public sealed class InlineColorPickerTests
                 Draft = viewModel.BackgroundColor,
                 Saved = config.Pages[1].Background,
                 Header = Assert.IsType<TextBlock>(picker.FindName("HeaderLabel")).Text,
+                FlyoutOpen = flyout.IsOpen,
+                FirstRecent = palette.Colors[0].Hex,
             };
         });
 
         Assert.Equal("#5B5BFF", result.Draft);
         Assert.Equal("#5B5BFF", result.Saved);
         Assert.Equal("#5B5BFF", result.Header);
+        Assert.False(result.FlyoutOpen);
+        Assert.Equal("#5B5BFF", result.FirstRecent);
     }
 
     [Fact]
-    public void Baml_AllFiveColourFieldsUseTheInlinePicker()
+    public void Baml_AllColourFieldsUseTheFieldButtonAndTheDockedFlyout()
     {
         var root = FindRepositoryRoot();
         var overlay = File.ReadAllText(Path.Combine(root, "TouchPanel", "Views", "EditOverlay.xaml"));
@@ -529,62 +412,30 @@ public sealed class InlineColorPickerTests
         Assert.Contains("x:Name=\"BackgroundPicker\"", overlay, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"AccentPicker\"", overlay, StringComparison.Ordinal);
         Assert.Contains("x:Name=\"OnIconColorPicker\"", overlay, StringComparison.Ordinal);
+        Assert.Contains("FieldCommand=\"{Binding ToggleColorFlyoutCommand}\"", overlay, StringComparison.Ordinal);
+        Assert.Contains("x:Name=\"PropertyFlyoutHost\"", overlay, StringComparison.Ordinal);
+        Assert.Contains("controls:PropertyFlyout", overlay, StringComparison.Ordinal);
 
         Assert.DoesNotContain("x:Name=\"ForegroundBox\"", overlay, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"BackgroundBox\"", overlay, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"AccentBox\"", overlay, StringComparison.Ordinal);
         Assert.DoesNotContain("OnIconColorBox", overlay, StringComparison.Ordinal);
 
-        Assert.Contains("controls:InlineColorPicker x:Name=\"ForegroundPicker\"", overlay, StringComparison.Ordinal);
-        Assert.Contains("controls:InlineColorPicker x:Name=\"BackgroundPicker\"", overlay, StringComparison.Ordinal);
-        Assert.Contains("controls:InlineColorPicker x:Name=\"AccentPicker\"", overlay, StringComparison.Ordinal);
-        Assert.Contains("controls:InlineColorPicker x:Name=\"OnIconColorPicker\"", overlay, StringComparison.Ordinal);
-        Assert.Contains("AllowNone=\"True\"", overlay, StringComparison.Ordinal);
+        var picker = File.ReadAllText(Path.Combine(root, "TouchPanel", "Views", "Controls", "InlineColorPicker.xaml"));
+        Assert.DoesNotContain("SwatchTiles", picker, StringComparison.Ordinal);
+        Assert.DoesNotContain("HexBox", picker, StringComparison.Ordinal);
+        Assert.Contains("PickerHeader", picker, StringComparison.Ordinal);
+
+        var flyout = File.ReadAllText(Path.Combine(root, "TouchPanel", "Views", "Controls", "PropertyFlyout.xaml"));
+        Assert.Contains("FlyoutColorTiles", flyout, StringComparison.Ordinal);
+        Assert.Contains("FlyoutHexBox", flyout, StringComparison.Ordinal);
+        Assert.Contains("TouchPan.IsEnabled", flyout, StringComparison.Ordinal);
 
         var pages = File.ReadAllText(Path.Combine(root, "TouchPanel", "Views", "Settings", "PagesEditorView.xaml"));
         Assert.Contains("controls:InlineColorPicker x:Name=\"PageBackgroundColorPicker\"", pages, StringComparison.Ordinal);
-        Assert.Contains("CommitCommand=\"{Binding ApplyBackgroundCommand}\"", pages, StringComparison.Ordinal);
+        Assert.Contains("ToggleBackgroundColorFlyoutCommand", pages, StringComparison.Ordinal);
+        Assert.Contains("ColorPickerFlyout", pages, StringComparison.Ordinal);
         Assert.DoesNotContain("x:Name=\"BackgroundColorBox\"", pages, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task Picker_FitsThePanelAtDesktopAndSmallTouchSizes()
-    {
-        using var sta = new StaThread();
-
-        var sizes = new[] { (Width: 1024d, Height: 600d), (Width: 512d, Height: 300d) };
-
-        foreach (var size in sizes)
-        {
-            var fits = await sta.InvokeAsync(() =>
-            {
-                // The property panel is 300 DIP wide with 12+16 padding and a 1 DIP border; the
-                // picker's content column is ~270 DIP. Expanded, it must not request more width.
-                var picker = new InlineColorPicker { IsExpanded = true, AllowNone = true };
-                var host = new Grid { Width = 270, Height = size.Height };
-                host.Children.Add(picker);
-                host.Measure(new Size(270, size.Height));
-                host.Arrange(new Rect(0, 0, 270, size.Height));
-                host.UpdateLayout();
-                Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-                host.UpdateLayout();
-
-                var tiles = Assert.IsType<ItemsControl>(picker.FindName("SwatchTiles"));
-                var buttons = FindVisualDescendants<Button>(tiles).ToArray();
-                return new
-                {
-                    DesiredWidth = picker.DesiredSize.Width,
-                    TileWidth = buttons.Min(button => button.ActualWidth),
-                    TileHeight = buttons.Min(button => button.ActualHeight),
-                    Header = Assert.IsType<Button>(picker.FindName("PickerHeader")).ActualHeight,
-                };
-            });
-
-            Assert.True(fits.DesiredWidth <= 270, $"At {size.Width}x{size.Height} the picker requested {fits.DesiredWidth} DIP.");
-            Assert.True(fits.TileWidth >= 40, $"At {size.Width}x{size.Height} a swatch was {fits.TileWidth} DIP wide.");
-            Assert.True(fits.TileHeight >= 40, $"At {size.Width}x{size.Height} a swatch was {fits.TileHeight} DIP tall.");
-            Assert.True(fits.Header >= 40, $"At {size.Width}x{size.Height} the header was {fits.Header} DIP tall.");
-        }
     }
 
     private static Grid Host(FrameworkElement element, double width, double height)
@@ -594,28 +445,9 @@ public sealed class InlineColorPickerTests
         host.Measure(new Size(width, height));
         host.Arrange(new Rect(0, 0, width, height));
         host.UpdateLayout();
+        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+        host.UpdateLayout();
         return host;
-    }
-
-    private static bool SelectSwatch(Grid host, InlineColorPicker picker, string hex)
-    {
-        var header = Assert.IsType<Button>(picker.FindName("PickerHeader"));
-        if (!picker.IsExpanded)
-        {
-            header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        }
-
-        host.UpdateLayout();
-        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-        host.UpdateLayout();
-
-        var tiles = Assert.IsType<ItemsControl>(picker.FindName("SwatchTiles"));
-        var tile = FindVisualDescendants<Button>(tiles)
-            .Single(button => string.Equals((button.DataContext as ColorSwatchOption)?.Hex, hex, StringComparison.Ordinal));
-        tile.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-        host.UpdateLayout();
-        Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-        return true;
     }
 
     private static EditorContent CreateEditor(WidgetConfig widget)
@@ -679,29 +511,6 @@ public sealed class InlineColorPickerTests
         InitialOn = true,
         Action = new MuteActionConfig(),
     };
-
-    private static IEnumerable<T> FindVisualDescendants<T>(DependencyObject root)
-        where T : DependencyObject
-    {
-        var pending = new Queue<DependencyObject>();
-        pending.Enqueue(root);
-
-        while (pending.Count > 0)
-        {
-            var node = pending.Dequeue();
-            var count = VisualTreeHelper.GetChildrenCount(node);
-            for (var index = 0; index < count; index++)
-            {
-                var child = VisualTreeHelper.GetChild(node, index);
-                if (child is T match)
-                {
-                    yield return match;
-                }
-
-                pending.Enqueue(child);
-            }
-        }
-    }
 
     private static string FindRepositoryRoot()
     {

@@ -74,6 +74,7 @@ public partial class App : Application, IPanelConfigApplyTarget
     private StateStore? _stateStore;
     private RuntimeState? _runtimeState;
     private ToggleStatePersistence? _toggleStatePersistence;
+    private RecentColorPersistence? _recentColorPersistence;
     private JsonConfigStore? _configStore;
     private EditModeService? _editModeService;
     private PageSwitchCoordinator? _pageSwitchCoordinator;
@@ -284,6 +285,23 @@ public partial class App : Application, IPanelConfigApplyTarget
             {
                 var persistence = _toggleStatePersistence;
                 _toggleStatePersistence = null;
+                if (persistence is null)
+                {
+                    return;
+                }
+
+                await persistence.FlushAsync(cancellationToken);
+                persistence.Dispose();
+            }));
+
+        // User-requested MRU colours: flush the debounced recent-colour list within the same
+        // shutdown budget. state.json is one combined model, so both writers copy every flag.
+        _lifecycle.Register(new DelegateApplicationShutdownParticipant(
+            "recent-colours",
+            async cancellationToken =>
+            {
+                var persistence = _recentColorPersistence;
+                _recentColorPersistence = null;
                 if (persistence is null)
                 {
                     return;
@@ -1043,6 +1061,17 @@ public partial class App : Application, IPanelConfigApplyTarget
         previousPersistence?.Dispose();
         _toggleStatePersistence.Prune(ToggleStatePersistence.CollectPersistentToggleKeys(config));
 
+        // User-requested MRU colours: same debounced writer pattern, one shared list for the widget
+        // appearance pickers and the page-background picker. Replacing a previous instance on reload
+        // disposes its timer; the list is re-seeded from the freshly loaded state.
+        var previousColors = _recentColorPersistence;
+        _recentColorPersistence = new RecentColorPersistence(
+            runtimeState,
+            (snapshot, cancellationToken) => stateStore.SaveAsync(snapshot, cancellationToken),
+            TimeProvider.System,
+            logger: _logger);
+        previousColors?.Dispose();
+
         return new PanelStartupContext(config, selection, runtimeState);
     }
 
@@ -1530,7 +1559,7 @@ public partial class App : Application, IPanelConfigApplyTarget
                 window.LeaveEditMode();
             }
 
-            _editModeService = new EditModeService(config, page, store, _logger, Notifier, _widgetRegistry, _widgetRegistry, new ExecutableFilePicker(), _clockCulture, new SensorCatalog(_monitoringService), new ImageFilePicker(), config => AttachActivePage(window, config));
+            _editModeService = new EditModeService(config, page, store, _logger, Notifier, _widgetRegistry, _widgetRegistry, new ExecutableFilePicker(), _clockCulture, new SensorCatalog(_monitoringService), new ImageFilePicker(), config => AttachActivePage(window, config), recentColors: _recentColorPersistence);
             viewModel.AttachEditModeService(_editModeService);
             window.AttachEditModeService(_editModeService);
             window.EditModeExitRequested -= OnEditModeExitRequested;
@@ -1642,7 +1671,8 @@ public partial class App : Application, IPanelConfigApplyTarget
                 session,
                 () => Config,
                 logger: _logger,
-                imagePicker: new ImageFilePicker());
+                imagePicker: new ImageFilePicker(),
+                recentColors: _recentColorPersistence);
             window.AttachPagesEditor(_editModePagesViewModel);
 
             _logger.Information("Pages: the edit-mode pages surface is ready");
@@ -1969,7 +1999,8 @@ public partial class App : Application, IPanelConfigApplyTarget
                     () => Config,
                     () => _editModeService?.IsEditMode != true,
                     _logger,
-                    new ImageFilePicker());
+                    new ImageFilePicker(),
+                    _recentColorPersistence);
             }
 
             // M3-RF-850: the Appearance section shares the same single-writer coordinator as every

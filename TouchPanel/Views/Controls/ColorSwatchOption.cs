@@ -84,10 +84,17 @@ public sealed class ColorSwatchOption
     /// <summary>Builds the tile list from the shared palette, optionally appending "None".</summary>
     /// <param name="allowNone">Whether the "None" tile is offered.</param>
     /// <returns>The tiles in display order.</returns>
-    public static IReadOnlyList<ColorSwatchOption> CreateTiles(bool allowNone)
+    public static IReadOnlyList<ColorSwatchOption> CreateTiles(bool allowNone) =>
+        CreateTiles(ColorPalette.Standard, allowNone);
+
+    /// <summary>Builds the tile list from an explicit palette (for example the MRU-ordered one).</summary>
+    /// <param name="swatches">The palette entries in display order.</param>
+    /// <param name="allowNone">Whether the "None" tile is offered.</param>
+    /// <returns>The tiles in display order.</returns>
+    public static IReadOnlyList<ColorSwatchOption> CreateTiles(IEnumerable<ColorSwatch> swatches, bool allowNone)
     {
         var tiles = new List<ColorSwatchOption>(ColorPalette.Standard.Count + 1);
-        foreach (var swatch in ColorPalette.Standard)
+        foreach (var swatch in swatches)
         {
             tiles.Add(new ColorSwatchOption(
                 swatch.Hex,

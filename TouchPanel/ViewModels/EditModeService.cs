@@ -120,6 +120,7 @@ public sealed class EditModeService : INotifyPropertyChanged
     private readonly IClockCultureSource? _clockCulture;
     private readonly ISensorCatalog? _sensorCatalog;
     private readonly IImageFilePicker? _imageFilePicker;
+    private readonly IRecentColorPalette _recentColors;
     private readonly AppPresetDetector _appPresetDetector;
     private bool _isDeleteConfirmationVisible;
     private double _pageWidth;
@@ -163,6 +164,10 @@ public sealed class EditModeService : INotifyPropertyChanged
     /// Injectable preset-app detector (user-requested Apps row) so tests can supply fake file and
     /// directory probes; when <see langword="null"/>, the real filesystem detector is used.
     /// </param>
+    /// <param name="recentColors">
+    /// The shared most-recent colour list passed to each property editor's picker flyout; when
+    /// <see langword="null"/>, editors use an in-memory palette seeded with the defaults.
+    /// </param>
     /// <exception cref="ArgumentNullException">Thrown when a required dependency is <see langword="null"/>.</exception>
     public EditModeService(
         PanelConfig config,
@@ -177,7 +182,8 @@ public sealed class EditModeService : INotifyPropertyChanged
         ISensorCatalog? sensorCatalog = null,
         IImageFilePicker? imageFilePicker = null,
         Func<PanelConfig, PageViewModel?>? pageRebuilder = null,
-        AppPresetDetector? appPresetDetector = null)
+        AppPresetDetector? appPresetDetector = null,
+        IRecentColorPalette? recentColors = null)
     {
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(page);
@@ -196,6 +202,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         _sensorCatalog = sensorCatalog;
         _imageFilePicker = imageFilePicker;
         _appPresetDetector = appPresetDetector ?? new AppPresetDetector();
+        _recentColors = recentColors ?? new RecentColorPalette();
     }
 
     /// <inheritdoc />
@@ -466,7 +473,7 @@ public sealed class EditModeService : INotifyPropertyChanged
             return;
         }
 
-        _propertyEditor = new PropertyEditorViewModel(this, widget!, config, _executablePicker, _logger, _clockCulture, _sensorCatalog, _config.Hotkeys, _imageFilePicker);
+        _propertyEditor = new PropertyEditorViewModel(this, widget!, config, _executablePicker, _logger, _clockCulture, _sensorCatalog, _config.Hotkeys, _imageFilePicker, _recentColors);
         OnPropertyChanged(nameof(PropertyEditor));
         OnPropertyChanged(nameof(HasPropertyEditor));
     }
@@ -488,6 +495,7 @@ public sealed class EditModeService : INotifyPropertyChanged
         // field is still focused ends the live session cleanly (the pending value is committed)
         // instead of leaving a preview without its normalization/error handling.
         _propertyEditor.EndLiveEdit();
+        _propertyEditor.Flyout.Close();
 
         _propertyEditor = null;
         OnPropertyChanged(nameof(PropertyEditor));

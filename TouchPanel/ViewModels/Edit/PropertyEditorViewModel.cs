@@ -131,7 +131,8 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFi
         IClockCultureSource? clockCulture = null,
         ISensorCatalog? sensorCatalog = null,
         IReadOnlyList<HotkeyConfig>? hotkeys = null,
-        IImageFilePicker? imageFilePicker = null)
+        IImageFilePicker? imageFilePicker = null,
+        IRecentColorPalette? recentColors = null)
     {
         ArgumentNullException.ThrowIfNull(owner);
         ArgumentNullException.ThrowIfNull(widget);
@@ -143,6 +144,24 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFi
         _clockCulture = (clockCulture ?? ClockCultureSource.Default).Culture;
         _sensorCatalog = sensorCatalog ?? new SensorCatalog();
         _imageFilePicker = imageFilePicker;
+
+        // The picker flyout (user-requested) is transient editor state; it shares the application's
+        // MRU palette when one is supplied so widget and page-background selections stay in sync.
+        Flyout = new PropertyPickerFlyoutViewModel(this, recentColors ?? new RecentColorPalette());
+        ToggleIconFlyoutCommand = new RelayCommand<string>(target =>
+        {
+            if (TryParseTarget(target, PropertyPickerKind.Icon, out var parsed))
+            {
+                Flyout.ToggleIcon(parsed);
+            }
+        });
+        ToggleColorFlyoutCommand = new RelayCommand<string>(target =>
+        {
+            if (TryParseTarget(target, PropertyPickerKind.Color, out var parsed))
+            {
+                Flyout.ToggleColor(parsed);
+            }
+        });
 
         // M5-RF-542: the active theme's appearance defaults. They supply the editor's inherited
         // values for fields the widget leaves null (no blanks, no hard-coded constants); an explicit
@@ -232,6 +251,25 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFi
 
     /// <summary>Gets the edited widget's id.</summary>
     public string WidgetId => _config.Id;
+
+    /// <summary>
+    /// Gets the docked picker flyout state (user-requested replacement for inline picker expansion).
+    /// The flyout is transient editor state: it is created with the editor and disappears when the
+    /// editor closes or the selection changes.
+    /// </summary>
+    public PropertyPickerFlyoutViewModel Flyout { get; }
+
+    /// <summary>
+    /// Gets the command that opens/toggles the icon flyout for the target passed as its parameter
+    /// (the <see cref="PropertyPickerTarget"/> name, for example <c>Icon</c> or <c>OnIcon</c>).
+    /// </summary>
+    public ICommand ToggleIconFlyoutCommand { get; }
+
+    /// <summary>
+    /// Gets the command that opens/toggles the colour flyout for the target passed as its parameter
+    /// (for example <c>Foreground</c> or <c>OnIconColor</c>).
+    /// </summary>
+    public ICommand ToggleColorFlyoutCommand { get; }
 
     /// <summary>Gets the edited widget's config type discriminator.</summary>
     public string WidgetType => _config.Type;
@@ -2640,6 +2678,27 @@ public sealed class PropertyEditorViewModel : INotifyPropertyChanged, INumericFi
 
     private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+
+    private static bool TryParseTarget(string? value, PropertyPickerKind kind, out PropertyPickerTarget target)
+    {
+        target = PropertyPickerTarget.None;
+        if (!Enum.TryParse<PropertyPickerTarget>(value, ignoreCase: true, out var parsed)
+            || parsed == PropertyPickerTarget.None)
+        {
+            return false;
+        }
+
+        var isIcon = parsed is PropertyPickerTarget.Icon
+            or PropertyPickerTarget.LabelIcon
+            or PropertyPickerTarget.OnIcon;
+        if ((kind == PropertyPickerKind.Icon) != isIcon)
+        {
+            return false;
+        }
+
+        target = parsed;
+        return true;
+    }
 
     private static bool IsFiniteMagnitude(double value) =>
         double.IsFinite(value) && Math.Abs(value) <= ConfigValidator.MaxGaugeMagnitude;

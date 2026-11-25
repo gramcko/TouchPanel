@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace TouchPanel.Config;
 
@@ -14,6 +15,7 @@ public sealed class RuntimeState
     public const int CurrentSchemaVersion = 1;
 
     private Dictionary<string, bool> _toggleStates = new(StringComparer.Ordinal);
+    private List<string> _recentColors = RecentColorPalette.Normalize(null).ToList();
 
     /// <summary>
     /// Gets or sets the state-file schema version. A file with a different version is treated as
@@ -39,5 +41,19 @@ public sealed class RuntimeState
     {
         get => _toggleStates;
         set => _toggleStates = value ?? new Dictionary<string, bool>(StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// Gets or sets the most-recently-used colour list shared by the widget appearance pickers and
+    /// the page-background picker (user-requested colour picker). Stored only in <c>state.json</c>;
+    /// a missing, empty, wholly invalid, or oversized list is normalized tolerantly: malformed
+    /// entries are dropped, duplicates are removed case-insensitively, at most
+    /// <see cref="RecentColorPalette.Capacity"/> entries are kept, and an empty result falls back
+    /// to the standard palette. A JSON <c>null</c> therefore stays non-fatal.
+    /// </summary>
+    public List<string> RecentColors
+    {
+        get => _recentColors;
+        set => _recentColors = RecentColorPalette.Normalize(value);
     }
 }

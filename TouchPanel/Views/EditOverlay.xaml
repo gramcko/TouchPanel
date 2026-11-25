@@ -25,6 +25,7 @@
             </ResourceDictionary.MergedDictionaries>
 
             <BooleanToVisibilityConverter x:Key="EditModeVisibilityConverter" />
+            <controls:FlyoutWidthConverter x:Key="FlyoutWidthConverter" />
 
             <!-- Selection frame: neutral while unselected, accent while selected (RF-027 feedback). -->
             <Style x:Key="EditSelectionFrameStyle" TargetType="Border">
@@ -887,7 +888,9 @@
                                     -->
                                     <controls:InlineIconPicker x:Name="LabelIconPicker"
                                                                ItemsSource="{Binding LabelIconOptions}"
-                                                               SelectedItem="{Binding SelectedLabelIcon, Mode=TwoWay}" />
+                                                               SelectedItem="{Binding SelectedLabelIcon, Mode=TwoWay}"
+                                                               FieldCommand="{Binding ToggleIconFlyoutCommand}"
+                                                               FieldCommandParameter="LabelIcon" />
                                 </StackPanel>
 
                                 <!--
@@ -902,7 +905,9 @@
                                     <!-- Long catalog: inline tile picker instead of a ComboBox. -->
                                     <controls:InlineIconPicker x:Name="IconPicker"
                                                                ItemsSource="{Binding IconOptions}"
-                                                               SelectedItem="{Binding SelectedIcon, Mode=TwoWay}" />
+                                                               SelectedItem="{Binding SelectedIcon, Mode=TwoWay}"
+                                                               FieldCommand="{Binding ToggleIconFlyoutCommand}"
+                                                               FieldCommandParameter="Icon" />
 
                                     <!--
                                         User-requested addition: toggles only. An optional second
@@ -916,7 +921,9 @@
                                         <TextBlock Text="On icon (on state)" Style="{StaticResource EditPropertySectionLabelStyle}" />
                                         <controls:InlineIconPicker x:Name="OnIconPicker"
                                                                    ItemsSource="{Binding OnIconOptions}"
-                                                                   SelectedItem="{Binding SelectedOnIcon, Mode=TwoWay}" />
+                                                                   SelectedItem="{Binding SelectedOnIcon, Mode=TwoWay}"
+                                                                   FieldCommand="{Binding ToggleIconFlyoutCommand}"
+                                                                   FieldCommandParameter="OnIcon" />
 
                                         <TextBlock Text="On icon colour" Style="{StaticResource EditPropertySectionLabelStyle}" />
                                         <controls:InlineColorPicker x:Name="OnIconColorPicker"
@@ -924,6 +931,8 @@
                                                                     IsInherited="{Binding IsOnIconColorInherited, Mode=OneWay}"
                                                                     AllowNone="True"
                                                                     NoneText="Inherited"
+                                                                    FieldCommand="{Binding ToggleColorFlyoutCommand}"
+                                                                    FieldCommandParameter="OnIconColor"
                                                                     AutomationProperties.Name="On icon colour" />
                                     </StackPanel>
 
@@ -933,6 +942,8 @@
                                                                 IsInherited="{Binding IsForegroundInherited, Mode=OneWay}"
                                                                 AllowNone="True"
                                                                 NoneText="Inherited"
+                                                                FieldCommand="{Binding ToggleColorFlyoutCommand}"
+                                                                FieldCommandParameter="Foreground"
                                                                 AutomationProperties.Name="Foreground" />
 
                                     <TextBlock Text="Background" Style="{StaticResource EditPropertySectionLabelStyle}" />
@@ -941,6 +952,8 @@
                                                                 IsInherited="{Binding IsBackgroundInherited, Mode=OneWay}"
                                                                 AllowNone="True"
                                                                 NoneText="Inherited"
+                                                                FieldCommand="{Binding ToggleColorFlyoutCommand}"
+                                                                FieldCommandParameter="Background"
                                                                 AutomationProperties.Name="Background" />
 
                                     <TextBlock Text="Accent" Style="{StaticResource EditPropertySectionLabelStyle}" />
@@ -949,6 +962,8 @@
                                                                 IsInherited="{Binding IsAccentInherited, Mode=OneWay}"
                                                                 AllowNone="True"
                                                                 NoneText="Inherited"
+                                                                FieldCommand="{Binding ToggleColorFlyoutCommand}"
+                                                                FieldCommandParameter="Accent"
                                                                 AutomationProperties.Name="Accent" />
 
                                     <!--
@@ -1653,6 +1668,29 @@
             </ContentControl>
         </Border>
 
+        <!--
+            User-requested docked picker flyout: icon and colour fields no longer expand inside the
+            property panel. The flyout occupies the slot immediately to the left of the 300 DIP
+            property panel, keeps the same 560 DIP height ceiling, and disappears with the editor
+            (the ContentControl is empty when no editor is open; selection changes recreate the
+            editor with its flyout closed). Its width shrinks to the available slot at 512x300 so it
+            is never clipped or pushed over the panel, and row 0 ends above the bottom edit sheet.
+        -->
+        <ContentControl x:Name="PropertyFlyoutHost"
+                        Grid.Row="0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Stretch"
+                        Margin="0,10,320,0"
+                        Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource FlyoutWidthConverter}}"
+                        MaxHeight="560"
+                        Content="{Binding PropertyEditor}"
+                        Focusable="False">
+            <ContentControl.ContentTemplate>
+                <DataTemplate>
+                    <controls:PropertyFlyout DataContext="{Binding Flyout}" />
+                </DataTemplate>
+            </ContentControl.ContentTemplate>
+        </ContentControl>
         <!--
             User-requested: pages management inside edit mode. It reuses the existing touch pages
             editor, so add/rename/remove/open keep the same single-writer persistence and guards. The

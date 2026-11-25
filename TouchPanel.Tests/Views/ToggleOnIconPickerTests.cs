@@ -72,18 +72,15 @@ public sealed class ToggleOnIconPickerTests
             var toggleViewModel = Assert.IsType<ToggleWidgetViewModel>(context.Widget);
             var picker = Assert.IsType<InlineIconPicker>(context.Content.FindName("OnIconPicker"));
             var header = Assert.IsType<Button>(picker.FindName("PickerHeader"));
-            var tiles = Assert.IsType<ItemsControl>(picker.FindName("PickerTiles"));
 
             Assert.False(toggleViewModel.HasOnIcon);
 
             header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             context.Host.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            context.Host.UpdateLayout();
 
-            var mutedTile = FindVisualDescendants<Button>(tiles)
-                .Single(button => (button.DataContext as IconOption)?.Id == "microphoneMuted");
-            mutedTile.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            var muted = editor.Flyout.IconOptions.Single(option => option.Id == "microphoneMuted");
+            editor.Flyout.SelectIconCommand.Execute(muted);
             context.Host.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
@@ -102,9 +99,7 @@ public sealed class ToggleOnIconPickerTests
             // Re-open and pick "None": the configured on icon clears and the base icon returns.
             header.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             context.Host.UpdateLayout();
-            var noneTile = FindVisualDescendants<Button>(tiles)
-                .Single(button => (button.DataContext as IconOption)?.Id == string.Empty);
-            noneTile.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            editor.Flyout.SelectIconCommand.Execute(editor.Flyout.IconOptions[0]);
             context.Host.UpdateLayout();
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
 
@@ -203,6 +198,9 @@ public sealed class ToggleOnIconPickerTests
         service.SelectWidget(page.Widgets[0]);
         service.OpenPropertyEditor();
         overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+        overlay.Measure(new Size(1024, 600));
+        overlay.Arrange(new Rect(0, 0, 1024, 600));
+        overlay.UpdateLayout();
 
         var panel = Assert.IsType<Border>(overlay.FindName("PropertyPanel"));
         var contentControl = Assert.IsType<ContentControl>(panel.Child);

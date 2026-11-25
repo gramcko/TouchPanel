@@ -106,6 +106,7 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
+    <Grid Focusable="False">
     <StackPanel Focusable="False">
         <TextBlock Text="Pages" Style="{StaticResource PagesSectionHeaderStyle}" />
 
@@ -286,7 +287,7 @@
                                     IsInherited="{Binding IsPageBackgroundColorInherited, Mode=OneWay}"
                                     AllowNone="True"
                                     NoneText="None"
-                                    CommitCommand="{Binding ApplyBackgroundCommand}"
+                                    FieldCommand="{Binding ToggleBackgroundColorFlyoutCommand}"
                                     IsEnabled="{Binding CanEditBackground}"
                                     AutomationProperties.Name="Page background color" />
         <Button x:Name="ApplyBackgroundButton"
@@ -389,4 +390,19 @@
             </TextBlock.Style>
         </TextBlock>
     </StackPanel>
+
+        <!--
+            Page-background colour flyout (user-requested picker): it overlays the pages form instead
+            of expanding the field and pushing the Apply/Clear buttons down. It shares the MRU palette
+            with the widget colour flyouts.
+        -->
+        <controls:ColorPickerFlyout x:Name="PageBackgroundColorFlyout"
+                                    DataContext="{Binding BackgroundColorFlyout}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Top"
+                                    Width="320"
+                                    MaxHeight="520"
+                                    Panel.ZIndex="10"
+                                    Focusable="False" />
+    </Grid>
 </UserControl>
