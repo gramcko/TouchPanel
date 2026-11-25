@@ -19,9 +19,15 @@ Latest release: [github.com/gramcko/TouchPanel/releases](https://github.com/gram
 - **Live telemetry** at ~1 Hz (CPU/GPU/RAM/disk/network, temperatures and fan speeds via LibreHardwareMonitor — optional), with a configurable polling interval.
 - **Themes** (dark / light / high-contrast / midnight / nord / OLED) plus accent colour and icon packs, with per-widget appearance overrides and app-wide themed scrollbars.
 - **Edit mode**: add/remove/duplicate widgets, move/resize, property and action editors with executable browse, grid snap with alignment guides, and undo/redo for widget edits.
+- **Collapsible edit menu**: a centered pull tab above the toolbar hides or shows the whole edit strip with a short height + fade animation, so the page stays fully visible while editing.
 - **Edit-mode keyboard focus**: the panel takes keyboard focus only while editing, so labels, values, and paths can be typed in; leaving edit mode returns focus to the window you came from, and normal mode still never activates or steals focus.
 - **Brand app buttons**: Steam, Discord, WhatsApp, Spotify, Chrome, Edge, Brave, Firefox, VS Code, and GitHub Desktop icons, plus an **Apps** row in the edit toolbar that adds a ready-made launch button (detected install path, otherwise the app's URI via the shell).
-- **Inline icon picker and label icons**: the Icon and Label icon fields open a scrollable icon grid inside the property panel, and a widget's text label can be replaced by an icon (the text stays available as a tooltip).
+- **Icon and colour submenus**: the Icon, Label icon, and Toggle on-icon fields open a scrollable icon grid in a separate panel beside the property editor instead of expanding it inline (tapping the field again closes it), and a widget's text label can be replaced by an icon (the text stays available as a tooltip).
+- **Large icon catalog**: audio (headset, volume levels, mic-off), system (brightness, fullscreen, sleep, unlock, key, shield, network/USB/drive, print, screenshot), edit/view, people/apps, and objects glyphs, including line-art headphones, headphones-muted, and mic-muted — every glyph verified against the installed font.
+- **Numeric steppers**: − / + buttons with press-and-hold repeat and numeric-only input on font size, opacity, X/Y, width/height, min/max, slider and sparkline values, and volume; opacity steps by 0.1, the value previews live, and each edit is one undo step.
+- **Colour picker for every colour**: swatches plus exact hex for foreground, background, accent, page background, and the toggle on-icon colour.
+- **Recent colours**: a picked colour moves to the front of the palette (24 kept, oldest dropped) and the list persists across restarts.
+- **Toggle on-state icon**: an optional second icon for the ON state with its own colour, defaulting to the theme background so it stays visible on the accent-filled active surface.
 - **Auto (KB/MB) units**: byte-rate sensors switch from KB/s to MB/s at 1024 KB/s and back.
 - **Application icon** for the executable, the tray, and all windows.
 - **System tray** lifecycle with Show/Hide Panel, Edit Mode, Settings…, Hotkeys…, About TouchPanel…, Open Configuration Folder, and Exit.
@@ -152,6 +158,8 @@ Enter Edit Mode from the tray, by **long-pressing a widget**, by long-pressing e
 
 Leave Edit Mode with the **Exit Edit Mode** button or press `Esc`. Layout changes persist on exit. Tapping widgets while editing selects/moves them and does not fire their actions.
 
+The edit strip collapses behind a **centered pull tab** above the toolbar: tapping it hides the whole toolbar with a short height + fade animation so the page is fully visible, and tapping the tab brings it straight back. In the property editor, the icon and colour fields open their picker in a panel beside the editor, numeric fields offer − / + steppers (hold to repeat), and every colour field — including the page background and the toggle's on-icon colour — opens the full picker with swatches and exact hex.
+
 Keyboard shortcuts while editing: `Esc` exits, arrow keys nudge the selected widget, `Delete` removes it, `Ctrl+D` duplicates it, `Ctrl+G` toggles grid snap, and `Ctrl+Z` / `Ctrl+Y` undo and redo.
 
 ### Actions
@@ -167,7 +175,7 @@ Each widget binds to exactly one action:
 
 ### About and updates
 
-Tray **About TouchPanel…** opens a themed window with the app name, the running version (`1.0.3` today), a one-line description, links to the GitHub repository and releases, and a **Check for updates** button.
+Tray **About TouchPanel…** opens a themed window with the app name, the running version (`1.0.4` today), a one-line description, links to the GitHub repository and releases, and a **Check for updates** button.
 
 - The check is **manual only** — never on startup and no background polling. It queries the latest GitHub release over HTTPS with a 10 s timeout and a bounded response, then compares the tag with the running version.
 - It reports **Update available: vX** (with an **Open release** link) or **You're up to date**, and shows a neutral **Couldn't check for updates** when offline, when there are no releases, or on error. It never downloads or installs anything.
@@ -189,7 +197,7 @@ Choose a theme (dark / light / high-contrast / midnight / nord / OLED), an accen
 
 ```text
 %APPDATA%\TouchPanel\panel.json          # user-editable configuration
-%APPDATA%\TouchPanel\state.json          # runtime state (e.g. toggle persistence)
+%APPDATA%\TouchPanel\state.json          # runtime state (toggle persistence, recent colours)
 %APPDATA%\TouchPanel\panel.backup.json   # last known valid backup
 %LOCALAPPDATA%\TouchPanel\logs           # structured rotating logs
 ```

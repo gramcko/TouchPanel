@@ -17,8 +17,8 @@
     <!-- User-requested About window: the one explicit version source. The About UI reads the
          resulting assembly informational version (Services/Updates/AppInfo.cs), so the displayed
          version and the update comparison can never drift from the build. Build metadata is kept
-         out of the informational version so the window shows a clean "1.0.3". -->
-    <Version>1.0.3</Version>
+         out of the informational version so the window shows a clean "1.0.4". -->
+    <Version>1.0.4</Version>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
 
     <!-- T-13/RF-088/D-22 (R-5): the publish gate runs a single-file, self-contained
