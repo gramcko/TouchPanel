@@ -220,7 +220,10 @@ Invalid JSON is preserved as `panel.corrupt-<timestamp>.json` and the app recove
   - `Services/` — lifecycle, tray, single instance, startup registration, settings, and reload.
   - `Theme/` — themes, colours, and styles.
 - `TouchPanel.Tests/` — the xUnit test suite.
-- `specs/` — product specifications, plans, and tasks.
+
+## Related projects
+
+- **[keep-mouse-on-screen](https://github.com/gramcko/keep-mouse-on-screen)** — keeps the mouse pointer in place while you use a touchscreen. Useful alongside TouchPanel on multi-display setups (it stops the cursor jumping to the touchscreen panel when you tap it).
 
 ## Contributing / notes
 
