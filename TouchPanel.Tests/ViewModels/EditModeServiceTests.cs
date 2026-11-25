@@ -490,6 +490,106 @@ public sealed class EditModeServiceTests
     }
 
     [Fact]
+    public void EditMenuVisibility_DefaultsVisibleAndTogglesWithChangeNotifications()
+    {
+        var context = CreateContext(Label("w1", 0, 0, 200, 100));
+        var raised = new List<string?>();
+        context.Service.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        // Session UI state starts expanded, even before entering edit mode; the hide/show controls
+        // only exist inside edit mode.
+        Assert.True(context.Service.IsEditMenuVisible);
+        Assert.False(context.Service.IsEditMenuHidden);
+
+        context.Service.Enter(1024, 600);
+        raised.Clear();
+
+        Assert.True(context.Service.HideEditMenu());
+        Assert.False(context.Service.IsEditMenuVisible);
+        Assert.True(context.Service.IsEditMenuHidden);
+        Assert.Contains(nameof(EditModeService.IsEditMenuVisible), raised);
+        Assert.Contains(nameof(EditModeService.IsEditMenuHidden), raised);
+        Assert.DoesNotContain(nameof(EditModeService.IsEditMode), raised);
+
+        raised.Clear();
+        Assert.True(context.Service.ToggleEditMenu());
+        Assert.True(context.Service.IsEditMenuVisible);
+        Assert.False(context.Service.IsEditMenuHidden);
+        Assert.Contains(nameof(EditModeService.IsEditMenuVisible), raised);
+    }
+
+    [Fact]
+    public void EditMenuVisibility_HideAndShowAreIdempotentAndInertOutsideEditMode()
+    {
+        var context = CreateContext(Label("w1", 0, 0, 200, 100));
+
+        // Outside edit mode the controls are inert and the state never leaks.
+        Assert.False(context.Service.HideEditMenu());
+        Assert.False(context.Service.ShowEditMenu());
+        Assert.False(context.Service.ToggleEditMenu());
+        Assert.False(context.Service.SetEditMenuVisible(false));
+        Assert.True(context.Service.IsEditMenuVisible);
+
+        context.Service.Enter(1024, 600);
+        var raised = new List<string?>();
+        context.Service.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        // Repeating a hide/show is an idempotent no-op: same state, one notification per real change.
+        Assert.True(context.Service.HideEditMenu());
+        var afterFirstHide = raised.Count;
+        Assert.True(context.Service.HideEditMenu());
+        Assert.False(context.Service.IsEditMenuVisible);
+        Assert.Equal(afterFirstHide, raised.Count);
+
+        Assert.True(context.Service.ShowEditMenu());
+        var afterFirstShow = raised.Count;
+        Assert.True(context.Service.ShowEditMenu());
+        Assert.True(context.Service.IsEditMenuVisible);
+        Assert.Equal(afterFirstShow, raised.Count);
+    }
+
+    [Fact]
+    public async Task EditMenuVisibility_ResetsOnANewSessionAndSurvivesSelectionAndPageRebuilds()
+    {
+        var config = ConfigWith(Label("w1", 0, 0, 200, 100), Label("w2", 0, 200, 200, 100));
+        var registry = WidgetRegistry.CreateDefault();
+        var page = PageViewModel.CreateForActivePage(config, registry);
+        var service = new EditModeService(
+            config,
+            page,
+            new RecordingConfigStore(),
+            factory: registry,
+            palette: registry,
+            pageRebuilder: rebuiltConfig => PageViewModel.CreateForActivePage(rebuiltConfig, registry));
+
+        service.Enter(1024, 600);
+        Assert.True(service.HideEditMenu());
+
+        // Selection changes and an in-session page rebuild (undo/redo replaces the page view model)
+        // must not bring the toolbar back.
+        service.SelectWidget(service.Widgets[0]);
+        Assert.False(service.IsEditMenuVisible);
+        service.SelectWidget(service.Widgets[1]);
+        Assert.False(service.IsEditMenuVisible);
+
+        service.SelectWidget(service.Widgets[0]);
+        Assert.True(service.MoveWidget(service.Widgets[0], 16, 0));
+        Assert.True(service.TryUndo());
+        Assert.False(service.IsEditMenuVisible);
+
+        // A palette add selects the new widget and opens its editor; the hidden toolbar stays hidden.
+        Assert.True(service.AddWidget(WidgetTypes.Button));
+        Assert.False(service.IsEditMenuVisible);
+
+        await service.ExitAsync();
+        Assert.True(service.IsEditMenuVisible);
+
+        // Every new edit session starts with the toolbar expanded.
+        service.Enter(1024, 600);
+        Assert.True(service.IsEditMenuVisible);
+    }
+
+    [Fact]
     public void RemoveSelectedWidget_RemovesFromThePageAndConfigurationAndMarksDirty()
     {
         var context = CreateContext(Label("w1", 10, 10, 200, 100));

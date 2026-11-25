@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Media.Animation;
 using TouchPanel.ViewModels;
 using TouchPanel.ViewModels.Settings;
 
@@ -17,10 +19,22 @@ namespace TouchPanel.Views;
 /// </summary>
 public partial class EditOverlay : UserControl
 {
+    /// <summary>Transition length for collapsing the edit menu (user-requested animation).</summary>
+    private static readonly Duration MenuCloseDuration = new(TimeSpan.FromMilliseconds(180));
+
+    /// <summary>Transition length for expanding the edit menu (user-requested animation).</summary>
+    private static readonly Duration MenuOpenDuration = new(TimeSpan.FromMilliseconds(200));
+
+    private EditModeService? _menuService;
+    private double _expandedMenuHeight;
+    private int _menuAnimationGeneration;
+    private bool _wasInEditMode;
+
     /// <summary>Initializes a new instance of the <see cref="EditOverlay"/> class.</summary>
     public EditOverlay()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
     }
 
     /// <summary>
@@ -133,6 +147,306 @@ public partial class EditOverlay : UserControl
     /// <param name="sender">The Snap <see cref="ToggleButton"/>.</param>
     /// <param name="e">The click event data.</param>
     private void OnToggleSnapClick(object sender, RoutedEventArgs e) => Service?.ToggleSnap();
+
+    /// <summary>
+    /// Flips the edit-mode toolbar visibility from the attached pull-tab on top of it
+    /// (user-requested hide/show edit menu). The tab is always visible in edit mode, sits directly on
+    /// the toolbar sheet, and its label mirrors the state; the session-scoped state lives in the
+    /// bound <see cref="EditModeService"/>.
+    /// </summary>
+    /// <param name="sender">The attached menu tab button.</param>
+    /// <param name="e">The click event data.</param>
+    private void OnToggleEditMenuClick(object sender, RoutedEventArgs e) => Service?.ToggleEditMenu();
+
+    /// <summary>
+    /// Re-binds the toolbar transition to the current service instance. A page rebuild replaces the
+    /// service, so the previous handler is always detached first (no leaked subscriptions); the new
+    /// instance's state is applied instantly, because a replacement already starts expanded.
+    /// </summary>
+    /// <param name="sender">The overlay.</param>
+    /// <param name="e">The old and new data context.</param>
+    private void OnDataContextChanged(object? sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (_menuService is not null)
+        {
+            _menuService.PropertyChanged -= OnMenuServicePropertyChanged;
+        }
+
+        _menuService = e.NewValue as EditModeService;
+
+        if (_menuService is not null)
+        {
+            _menuService.PropertyChanged += OnMenuServicePropertyChanged;
+        }
+
+        _wasInEditMode = _menuService?.IsEditMode == true;
+        ApplyMenuState(animate: false);
+    }
+
+    /// <summary>
+    /// Follows the service's toolbar state. Only a user toggle during an active edit session
+    /// animates; entering/leaving edit mode (which always resets the toolbar to expanded) applies
+    /// the state immediately so a re-entry never flashes a transition.
+    /// </summary>
+    /// <param name="sender">The bound service.</param>
+    /// <param name="e">The changed property.</param>
+    private void OnMenuServicePropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!ReferenceEquals(sender, _menuService))
+        {
+            return;
+        }
+
+        if (e.PropertyName == nameof(EditModeService.IsEditMode))
+        {
+            _wasInEditMode = _menuService?.IsEditMode == true;
+            ApplyMenuState(animate: false);
+            return;
+        }
+
+        if (e.PropertyName != nameof(EditModeService.IsEditMenuVisible))
+        {
+            return;
+        }
+
+        ApplyMenuState(animate: _wasInEditMode && _menuService?.IsEditMode == true);
+    }
+
+    /// <summary>
+    /// Applies the service's toolbar state to the body, either instantly (construction, data-context
+    /// replacement, session entry/exit) or through the open/close transition (user toggle).
+    /// </summary>
+    /// <param name="animate">Whether to run the short height/opacity transition.</param>
+    private void ApplyMenuState(bool animate)
+    {
+        var visible = _menuService?.IsEditMenuVisible ?? true;
+
+        if (!animate)
+        {
+            StopMenuAnimation();
+            EditToolbar.Height = double.NaN;
+            EditToolbar.Opacity = 1;
+            EditToolbar.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
+            EditToolbar.IsHitTestVisible = visible;
+            return;
+        }
+
+        if (visible)
+        {
+            AnimateMenuOpen();
+        }
+        else
+        {
+            AnimateMenuClose();
+        }
+    }
+
+    /// <summary>
+    /// Collapses the toolbar body: its height shrinks from the current laid-out height to zero while
+    /// it fades out (ease-out cubic). The attached pull-tab is the body's stack sibling, so it rides
+    /// to the bottom with the shrinking sheet. Completion collapses the body and clears the animated
+    /// height so the element keeps its normal auto layout afterwards.
+    /// </summary>
+    private void AnimateMenuClose()
+    {
+        var toolbar = EditToolbar;
+        var startHeight = CurrentMenuHeight();
+        var startOpacity = toolbar.Opacity;
+        var wasAnimating = toolbar.HasAnimatedProperties;
+
+        // Remember the fully expanded height for the next open (unless we are only part way through
+        // an earlier transition, whose intermediate height must not become the remembered one).
+        if (!wasAnimating && startHeight > 0)
+        {
+            _expandedMenuHeight = startHeight;
+        }
+
+        StopMenuAnimation();
+        var generation = _menuAnimationGeneration;
+
+        // The body must stay visible while it shrinks; touching it is already off so a collapsing
+        // toolbar cannot swallow taps meant for the page underneath.
+        toolbar.Visibility = Visibility.Visible;
+        toolbar.IsHitTestVisible = false;
+        toolbar.Height = startHeight;
+        toolbar.Opacity = startOpacity;
+
+        var height = new DoubleAnimation
+        {
+            From = startHeight,
+            To = 0,
+            Duration = MenuCloseDuration,
+            EasingFunction = CreateMenuEasing(),
+        };
+        height.Completed += (_, _) => CompleteMenuClose(generation);
+
+        toolbar.BeginAnimation(FrameworkElement.HeightProperty, height, HandoffBehavior.SnapshotAndReplace);
+        toolbar.BeginAnimation(
+            UIElement.OpacityProperty,
+            new DoubleAnimation
+            {
+                From = startOpacity,
+                To = 0,
+                Duration = MenuCloseDuration,
+                EasingFunction = CreateMenuEasing(),
+            },
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    /// <summary>
+    /// Expands the toolbar body: it becomes visible at zero height, its natural (width-constrained)
+    /// height is measured, and it grows/fades in over the transition. Completion clears the animated
+    /// height and opacity so wrapping and layout behave exactly as before.
+    /// </summary>
+    private void AnimateMenuOpen()
+    {
+        var toolbar = EditToolbar;
+        var wasCollapsed = toolbar.Visibility != Visibility.Visible;
+        var fromHeight = CurrentMenuHeight();
+        var fromOpacity = toolbar.Opacity;
+
+        StopMenuAnimation();
+        var generation = _menuAnimationGeneration;
+
+        // Measure the natural height only after the body is measurable again; an animated height
+        // would otherwise be the value Measure sees.
+        toolbar.Visibility = Visibility.Visible;
+        toolbar.IsHitTestVisible = true;
+        toolbar.Height = double.NaN;
+        toolbar.Opacity = wasCollapsed ? 0 : fromOpacity;
+
+        var naturalHeight = MeasureMenuHeight();
+        if (!(naturalHeight > 0))
+        {
+            // Nothing measurable to grow into (for example before the first layout pass): show the
+            // body immediately rather than leaving it pinned at zero height.
+            StopMenuAnimation();
+            toolbar.Height = double.NaN;
+            toolbar.Opacity = 1;
+            return;
+        }
+
+        _expandedMenuHeight = naturalHeight;
+
+        var startHeight = wasCollapsed ? 0 : Math.Min(fromHeight, naturalHeight);
+        var startOpacity = wasCollapsed ? 0 : fromOpacity;
+        toolbar.Height = startHeight;
+        toolbar.Opacity = startOpacity;
+
+        var height = new DoubleAnimation
+        {
+            From = startHeight,
+            To = naturalHeight,
+            Duration = MenuOpenDuration,
+            EasingFunction = CreateMenuEasing(),
+        };
+        height.Completed += (_, _) => CompleteMenuOpen(generation, naturalHeight);
+
+        toolbar.BeginAnimation(FrameworkElement.HeightProperty, height, HandoffBehavior.SnapshotAndReplace);
+        toolbar.BeginAnimation(
+            UIElement.OpacityProperty,
+            new DoubleAnimation
+            {
+                From = startOpacity,
+                To = 1,
+                Duration = MenuOpenDuration,
+                EasingFunction = CreateMenuEasing(),
+            },
+            HandoffBehavior.SnapshotAndReplace);
+    }
+
+    /// <summary>Gets the body's current visual height, whether it is animated or laid out.</summary>
+    /// <returns>The height in DIPs, or zero when it has no measurable height.</returns>
+    private double CurrentMenuHeight()
+    {
+        var height = EditToolbar.Height;
+        if (!(height > 0) || double.IsInfinity(height))
+        {
+            height = EditToolbar.ActualHeight;
+        }
+
+        return double.IsFinite(height) && height > 0 ? height : 0;
+    }
+
+    /// <summary>
+    /// Measures the body's natural height with the width it really gets from the sheet, so the open
+    /// animation grows to the wrapped height instead of a stale or single-line value.
+    /// </summary>
+    /// <returns>The measured height in DIPs, falling back to the last known expanded height.</returns>
+    private double MeasureMenuHeight()
+    {
+        var width = EditSheet.ActualWidth;
+        if (!(width > 0) || double.IsInfinity(width))
+        {
+            width = EditToolbar.ActualWidth;
+        }
+
+        if (!(width > 0) || double.IsInfinity(width))
+        {
+            width = ActualWidth;
+        }
+
+        var constraint = width > 0 && double.IsFinite(width) ? width : double.PositiveInfinity;
+        EditToolbar.Measure(new Size(constraint, double.PositiveInfinity));
+        var measured = EditToolbar.DesiredSize.Height;
+        return measured > 0 ? measured : _expandedMenuHeight;
+    }
+
+    /// <summary>Removes any running treatment and invalidates the previous completion callback.</summary>
+    private void StopMenuAnimation()
+    {
+        _menuAnimationGeneration++;
+        EditToolbar.BeginAnimation(FrameworkElement.HeightProperty, null);
+        EditToolbar.BeginAnimation(UIElement.OpacityProperty, null);
+    }
+
+    /// <summary>
+    /// Finishes the collapse unless a newer transition replaced it. Clearing the animated height
+    /// (<see cref="double.NaN"/>) restores auto layout, and the body ends collapsed and untouchable.
+    /// </summary>
+    /// <param name="generation">The transition generation this completion belongs to.</param>
+    private void CompleteMenuClose(int generation)
+    {
+        if (generation != _menuAnimationGeneration || _menuService?.IsEditMenuVisible == true)
+        {
+            return;
+        }
+
+        var toolbar = EditToolbar;
+        toolbar.BeginAnimation(FrameworkElement.HeightProperty, null);
+        toolbar.BeginAnimation(UIElement.OpacityProperty, null);
+        toolbar.Height = double.NaN;
+        toolbar.Opacity = 1;
+        toolbar.Visibility = Visibility.Collapsed;
+        toolbar.IsHitTestVisible = false;
+    }
+
+    /// <summary>
+    /// Finishes the expansion unless a newer transition replaced it. Clearing the animated height and
+    /// opacity leaves the body in its normal auto-laid-out state.
+    /// </summary>
+    /// <param name="generation">The transition generation this completion belongs to.</param>
+    /// <param name="naturalHeight">The measured expanded height in DIPs.</param>
+    private void CompleteMenuOpen(int generation, double naturalHeight)
+    {
+        if (generation != _menuAnimationGeneration || _menuService?.IsEditMenuVisible == false)
+        {
+            return;
+        }
+
+        var toolbar = EditToolbar;
+        toolbar.BeginAnimation(FrameworkElement.HeightProperty, null);
+        toolbar.BeginAnimation(UIElement.OpacityProperty, null);
+        toolbar.Height = double.NaN;
+        toolbar.Opacity = 1;
+        toolbar.Visibility = Visibility.Visible;
+        toolbar.IsHitTestVisible = true;
+        _expandedMenuHeight = naturalHeight;
+    }
+
+    /// <summary>Creates the shared ease-out cubic curve used by both transitions.</summary>
+    /// <returns>A new easing function instance (timelines must not share one).</returns>
+    private static CubicEase CreateMenuEasing() => new() { EasingMode = EasingMode.EaseOut };
 
     /// <summary>
     /// Restores the previous edit-mode layout state (user-requested undo/redo) through the service,

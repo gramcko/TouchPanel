@@ -88,6 +88,7 @@
             <Style x:Key="EditToolbarButtonStyle" TargetType="ButtonBase">
                 <Setter Property="MinWidth" Value="44" />
                 <Setter Property="MinHeight" Value="44" />
+                <!-- 4 DIP on each side gives the 8 DIP gap between sibling toolbar buttons. -->
                 <Setter Property="Margin" Value="4,0" />
                 <Setter Property="Padding" Value="12,6" />
                 <Setter Property="Foreground" Value="{DynamicResource PanelForegroundBrush}" />
@@ -135,6 +136,55 @@
                         <Setter Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
                     </Trigger>
                 </Style.Triggers>
+            </Style>
+
+            <!--
+                User-requested attached menu tab (RF-043 feedback): the hide/show control is a tab
+                that comes out of the toolbar rather than a separate floating button. While the menu
+                is visible it is centered on the sheet, has rounded top corners and a top border only,
+                and stacks with zero gap onto the toolbar body (which owns the square top edge and
+                the rounded bottom corners). When the menu is hidden the tab is all that remains, so
+                the state trigger rounds all four corners and closes the bottom border, leaving a
+                complete pull-tab at the bottom center. The surface matches the toolbar background
+                and border brush; the label/tooltip come from the use site. Focus stays off the
+                keyboard chain and the toolbar-button minimum keeps the >= 44 DIP touch target.
+            -->
+            <Style x:Key="EditMenuTabStyle" TargetType="Button" BasedOn="{StaticResource EditToolbarButtonStyle}">
+                <Setter Property="Margin" Value="0" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="BorderBrush" Value="{DynamicResource WidgetBorderBrush}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="TabSurface"
+                                    Background="#CC1E1E1E"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="1,1,1,0"
+                                    CornerRadius="10,10,0,0"
+                                    SnapsToDevicePixels="True">
+                                <ContentPresenter Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <!-- Hidden menu: the tab stands alone, so it gets a full border and
+                                     all four corners rounded. -->
+                                <DataTrigger Binding="{Binding IsEditMenuHidden}" Value="True">
+                                    <Setter TargetName="TabSurface" Property="BorderThickness" Value="1" />
+                                    <Setter TargetName="TabSurface" Property="CornerRadius" Value="10" />
+                                </DataTrigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="TabSurface" Property="Background" Value="#CC2C2C2C" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="TabSurface" Property="Background" Value="{DynamicResource WidgetPressedBrush}" />
+                                    <Setter TargetName="TabSurface" Property="BorderBrush" Value="{DynamicResource PanelAccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
 
             <!--
@@ -259,10 +309,11 @@
           VerticalAlignment="Stretch"
           Visibility="{Binding IsEditMode, Converter={StaticResource EditModeVisibilityConverter}, FallbackValue=Collapsed}">
         <!--
-            The toolbar owns its own Auto row at the bottom so its action cluster (Snap / Duplicate /
-            Remove / Exit Edit Mode) is always laid out inside the panel width and can never be covered
-            by the property panel. The widget and guide layers span both rows so the overlay geometry
-            still matches the full-height widget host.
+            One bottom sheet: the toolbar body and its attached centered pull-tab share a single
+            vertical container, so the tab is part of the same surface (never a floating sibling with
+            a gap). The sheet owns its own Auto row at the bottom of the overlay, which keeps the tab
+            at the bottom center when the toolbar body collapses to zero height. The widget and guide
+            layers span both rows so the overlay geometry still matches the full-height widget host.
         -->
         <Grid.RowDefinitions>
             <RowDefinition Height="*" />
@@ -441,22 +492,68 @@
             It only exists while edit mode is active because it lives inside the edit-mode root.
 
             Layout fix (RF-023/RNF-015): the strip is wider than the 1024x600 panel, so the toolbar
-            uses a vertical two-row layout. Row 0 is the action cluster (Snap / Duplicate / Remove /
-            Exit Edit Mode) in a WrapPanel that wraps to a second line if the panel is narrower than
-            the cluster, so Exit Edit Mode is unmistakably always on-screen and touch-reachable. Row 1
-            is the palette in a ScrollViewer that scrolls/pans horizontally when it overflows. The
-            toolbar stretches only within the panel width (the overlay root is width-constrained), so
-            nothing is ever pushed off the panel at any palette size or DPI scaling. PanningMode lets
-            touch drag the palette without a keyboard or mouse.
+            uses a vertical layout. Row 0 is the action cluster (Undo / Redo / Snap / Pages /
+            Duplicate / Remove / Exit Edit Mode) in a WrapPanel that wraps to another line if the
+            panel is narrower than the cluster, so Exit Edit Mode is unmistakably always on-screen
+            and touch-reachable. Row 1 is the palette in a ScrollViewer that scrolls/pans
+            horizontally when it overflows, and row 2 is the preset apps strip. The toolbar stretches
+            only within the panel width (the overlay root is width-constrained), so nothing is ever
+            pushed off the panel at any palette size or DPI scaling. PanningMode lets touch drag the
+            palette without a keyboard or mouse.
+
+            The toolbar body and the menu pull-tab are children of one sheet container so they read
+            as a single surface. The body keeps the square top edge and the rounded bottom corners;
+            the tab supplies the rounded top corners and the top border.
         -->
-        <Border x:Name="EditToolbar"
-                Grid.Row="1"
-                HorizontalAlignment="Stretch"
-                Margin="10,0,10,10"
-                Padding="8,4"
-                Background="#CC1E1E1E"
-                CornerRadius="12"
-                Focusable="False">
+        <StackPanel x:Name="EditSheet"
+                    Grid.Row="1"
+                    Orientation="Vertical"
+                    HorizontalAlignment="Stretch"
+                    Margin="10,0,10,10"
+                    ClipToBounds="True"
+                    Focusable="False">
+
+            <!--
+                User-requested hide/show edit menu, now an attached centered pull-tab: the single
+                toggle sits directly on top of the toolbar body with no gap and is centered on the
+                sheet. Its label, tooltip, and automation name mirror the state, so the affordance is
+                unambiguous without hover. It remains visible and hit-testable in edit mode even when
+                the toolbar body collapses, rounding all four corners in that state. Touch-sized
+                (>= 44 DIP through the toolbar style), themed, and Focusable=false.
+            -->
+            <Button x:Name="ToggleEditMenuButton"
+                    Click="OnToggleEditMenuClick">
+                <Button.Style>
+                    <Style TargetType="Button" BasedOn="{StaticResource EditMenuTabStyle}">
+                        <Setter Property="Content" Value="▾ Hide menu" />
+                        <Setter Property="ToolTip" Value="Hide the edit menu and show the full page" />
+                        <Setter Property="AutomationProperties.Name" Value="Hide edit menu" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsEditMenuHidden}" Value="True">
+                                <Setter Property="Content" Value="▴ Edit menu" />
+                                <Setter Property="ToolTip" Value="Show the edit menu" />
+                                <Setter Property="AutomationProperties.Name" Value="Show edit menu" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+
+            <!--
+                The body's Visibility, Height, and Opacity are driven by the code-behind, which
+                animates them between the expanded and collapsed states whenever the bound
+                IsEditMenuVisible value is toggled during an active session. They are deliberately
+                not bound here: a binding would overwrite the animated values (and collapse the
+                body instantly instead of transitioning). The service still owns the state.
+            -->
+            <Border x:Name="EditToolbar"
+                    HorizontalAlignment="Stretch"
+                    Padding="12,8"
+                    Background="#CC1E1E1E"
+                    BorderBrush="{DynamicResource WidgetBorderBrush}"
+                    BorderThickness="1,0,1,1"
+                    CornerRadius="0,0,12,12"
+                    Focusable="False">
             <Grid x:Name="ToolbarGrid" Focusable="False">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -515,7 +612,12 @@
                             IsEnabled="{Binding CanModifySelection}"
                             Click="OnRemoveWidgetClick" />
 
-                    <Border Width="1" Height="32" VerticalAlignment="Center" Margin="8,0" Background="{DynamicResource WidgetBorderBrush}" />
+                    <Border x:Name="ActionDivider"
+                            Width="1"
+                            Height="32"
+                            VerticalAlignment="Center"
+                            Margin="10,0"
+                            Background="{DynamicResource WidgetBorderBrush}" />
 
                     <!-- Exits edit mode through the same composition-root path as Esc/tray: persist when
                          dirty, then restore the non-activating normal mode. The window forwards this
@@ -527,12 +629,18 @@
                 </WrapPanel>
 
                 <!--
-                    Row 1: the palette. Horizontally scrollable (or touch-pannable) so it can never
-                    push anything off the panel; PanningMode lets touch drag the palette without a
-                    keyboard or mouse.
+                    Row 1: the palette. Horizontally scrollable so it can never push anything off the
+                    panel. PanningMode remains for touch drags that start on the strip itself, but the
+                    row's buttons handle touch, which blocks the built-in panning (the same reason the
+                    property editor uses TouchPan); the auto horizontal bar is therefore the
+                    discoverable, always-available way to reach the buttons that overflow. The bar is
+                    only materialised when the content is wider than the viewport, and vertical
+                    scrolling stays disabled so the bar never adds a second, vertical axis at
+                    512x300.
                 -->
                 <ScrollViewer Grid.Row="1"
                               x:Name="PaletteScroll"
+                              Margin="0,8,0,0"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Disabled"
                               PanningMode="HorizontalOnly"
@@ -563,11 +671,15 @@
                 <!--
                     User-requested preset apps: a third touch row under the widget palette. Each
                     button creates an ImageButton for that app (brand icon + name) through the same
-                    add/undo/persist path as the palette. The row is horizontally pannable and is
+                    add/undo/persist path as the palette. The row is horizontally scrollable and is
                     laid out in a starred column so the toolbar always stays inside the panel width.
+                    As in the palette, the buttons block the built-in PanningMode panning, so the
+                    auto horizontal bar is the discoverable way to reach the overflow; it only
+                    appears when the strip is wider than its viewport.
                 -->
-                <Grid Grid.Row="2"
-                      Margin="0,2,0,0"
+                <Grid x:Name="AppPresetRow"
+                      Grid.Row="2"
+                      Margin="0,8,0,0"
                       Focusable="False">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
@@ -619,7 +731,8 @@
                     </ScrollViewer>
                 </Grid>
             </Grid>
-        </Border>
+            </Border>
+        </StackPanel>
 
         <!--
             T-13 property editor panel (RF-043/M2-RF-433): edits the selected widget's position,

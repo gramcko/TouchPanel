@@ -110,6 +110,7 @@ public sealed class EditModeService : INotifyPropertyChanged
     private bool _isEditMode;
     private bool _isDirty;
     private bool _isSnapEnabled = true;
+    private bool _isEditMenuVisible = true;
     private double _gridSize = GridSnap.DefaultGridSize;
     private IReadOnlyList<GuideLine> _activeGuides = [];
     private WidgetViewModelBase? _selectedWidget;
@@ -276,6 +277,22 @@ public sealed class EditModeService : INotifyPropertyChanged
     public bool IsSnapEnabled => _isSnapEnabled;
 
     /// <summary>
+    /// Gets a value indicating whether the edit-mode toolbar (action cluster, widget palette, and
+    /// Apps row) is expanded. It is <see langword="true"/> by default and is a session-only,
+    /// transient UI state: it is never persisted, resets to visible when a new edit session starts,
+    /// and returns to visible on exit so it cannot leak into normal mode. Hiding it gives the whole
+    /// page back while editing; a compact restore affordance stays reachable at the bottom.
+    /// </summary>
+    public bool IsEditMenuVisible => _isEditMenuVisible;
+
+    /// <summary>
+    /// Gets the inverse of <see cref="IsEditMenuVisible"/>, used by the compact restore affordance
+    /// shown in the toolbar's bottom area while the edit menu is hidden. Kept in sync with
+    /// <see cref="IsEditMenuVisible"/> through the same change notification.
+    /// </summary>
+    public bool IsEditMenuHidden => !_isEditMenuVisible;
+
+    /// <summary>
     /// Gets the edit grid size in DIPs used by drag/resize snapping and grid nudging
     /// (RF-044/M2-RF-441). It is bounded to <c>[2, 64]</c> DIP and defaults to
     /// <see cref="GridSnap.DefaultGridSize"/> (8). The value is session-only: it is not part of the
@@ -336,6 +353,10 @@ public sealed class EditModeService : INotifyPropertyChanged
         }
 
         _isEditMode = true;
+
+        // User-requested hide/show edit menu: every new edit session starts with the toolbar
+        // expanded so the affordances are discoverable and a hidden menu never survives a session.
+        SetEditMenuVisibleCore(true);
 
         // M2-RF-439: edit mode owns taps; suppress widget activation for the edited page.
         foreach (var widget in _page.Widgets)
@@ -769,6 +790,53 @@ public sealed class EditModeService : INotifyPropertyChanged
 
         _gridSize = normalized;
         OnPropertyChanged(nameof(GridSize));
+    }
+
+    /// <summary>
+    /// Shows or hides the edit-mode toolbar from the touch affordances (user-requested hide/show
+    /// edit menu). Hiding collapses the whole toolbar (action cluster, palette, and Apps row) so the
+    /// page is fully visible; a compact <b>Edit menu</b> control stays in the same bottom area to
+    /// restore it with one tap. The state is transient and session-scoped, never persisted. No-op
+    /// outside edit mode so it cannot leak into normal mode.
+    /// </summary>
+    /// <param name="visible">Whether the edit-mode toolbar should be visible.</param>
+    /// <returns><see langword="true"/> when the value was applied (edit mode active); a repeated call with the same value is an idempotent no-op.</returns>
+    public bool SetEditMenuVisible(bool visible)
+    {
+        if (!_isEditMode)
+        {
+            return false;
+        }
+
+        SetEditMenuVisibleCore(visible);
+        return true;
+    }
+
+    /// <summary>Shows the edit-mode toolbar; idempotent and inert outside edit mode.</summary>
+    /// <returns><see langword="true"/> when the value was applied (edit mode active).</returns>
+    public bool ShowEditMenu() => SetEditMenuVisible(true);
+
+    /// <summary>Hides the edit-mode toolbar; idempotent and inert outside edit mode.</summary>
+    /// <returns><see langword="true"/> when the value was applied (edit mode active).</returns>
+    public bool HideEditMenu() => SetEditMenuVisible(false);
+
+    /// <summary>
+    /// Flips the edit-mode toolbar visibility (user-requested hide/show control). No-op outside edit
+    /// mode so the affordance stays inert in normal operation.
+    /// </summary>
+    /// <returns><see langword="true"/> when the toggle was applied (edit mode active).</returns>
+    public bool ToggleEditMenu() => _isEditMode && SetEditMenuVisible(!_isEditMenuVisible);
+
+    private void SetEditMenuVisibleCore(bool visible)
+    {
+        if (_isEditMenuVisible == visible)
+        {
+            return;
+        }
+
+        _isEditMenuVisible = visible;
+        OnPropertyChanged(nameof(IsEditMenuVisible));
+        OnPropertyChanged(nameof(IsEditMenuHidden));
     }
 
     /// <summary>
@@ -1421,6 +1489,10 @@ public sealed class EditModeService : INotifyPropertyChanged
             SetGuides([]);
             SelectWidget(null);
             CancelRemove();
+
+            // User-requested hide/show edit menu: the transient hidden state never leaks into normal
+            // mode; the next session starts expanded (also enforced on Enter).
+            SetEditMenuVisibleCore(true);
             OnPropertyChanged(nameof(IsEditMode));
 
             // User-requested undo/redo: the history is per edit session and is discarded on exit;

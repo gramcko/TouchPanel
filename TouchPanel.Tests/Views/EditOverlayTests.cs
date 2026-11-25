@@ -22,6 +22,9 @@ namespace TouchPanel.Tests.Views;
 /// </summary>
 public sealed class EditOverlayTests
 {
+    /// <summary>Generous upper bound for a menu transition to settle (the animations are 180–200 ms).</summary>
+    private const int MenuTransitionTimeoutMilliseconds = 8000;
+
     [Fact]
     public async Task Overlay_BindsTheWidgetListAndFollowsEditModeVisibility()
     {
@@ -909,7 +912,9 @@ public sealed class EditOverlayTests
         Assert.Equal(ScrollBarVisibility.Auto, result.Pages.Vertical);
         Assert.False(result.Pages.Focusable, "Panning must not require keyboard focus.");
 
-        // The palette is horizontal by design and must stay that way.
+        // The palette is horizontal by design and must stay that way. Its bar is auto (visible only
+        // when the strip overflows) because the row's buttons block the built-in PanningMode touch
+        // panning; the bar is the discoverable way to reach the buttons that do not fit.
         Assert.Equal(PanningMode.HorizontalOnly, result.Palette.Panning);
         Assert.Equal(ScrollBarVisibility.Auto, result.Palette.Horizontal);
         Assert.Equal(ScrollBarVisibility.Disabled, result.Palette.Vertical);
@@ -964,6 +969,801 @@ public sealed class EditOverlayTests
         Assert.True(result.hasSelection, "Closing the edit menu must keep the selection.");
         Assert.Equal("Close", result.content);
         Assert.True(result.Focusable, "The Close button must be focusable so it commits the active field before closing.");
+    }
+
+    [Fact]
+    public async Task Overlay_MenuTab_IsAttachedCenteredAndSharesTheToolbarSheet()
+    {
+        // User feedback: the hide/show control must come out of the menu, not float above it. The
+        // tab and the toolbar body are children of one sheet container; the tab is centered, sits
+        // directly on the body (zero gap), and only rounds all four corners when the body is hidden.
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var sheet = Assert.IsType<StackPanel>(overlay.FindName("EditSheet"));
+            var toolbar = Assert.IsType<Border>(overlay.FindName("EditToolbar"));
+            var toggle = Assert.IsType<Button>(overlay.FindName("ToggleEditMenuButton"));
+            var propertyPanel = Assert.IsType<Border>(overlay.FindName("PropertyPanel"));
+            var pagesPanel = Assert.IsType<Border>(overlay.FindName("PagesPanel"));
+            var pagesToggle = Assert.IsType<ToggleButton>(overlay.FindName("PagesToggleButton"));
+            var actionCluster = Assert.IsType<WrapPanel>(overlay.FindName("ActionCluster"));
+            var paletteScroll = Assert.IsType<ScrollViewer>(overlay.FindName("PaletteScroll"));
+            var appScroll = Assert.IsType<ScrollViewer>(overlay.FindName("AppPresetScroll"));
+
+            service.Enter(1024, 600);
+            service.SelectWidget(page.Widgets[0]);
+            service.OpenPropertyEditor();
+            pagesToggle.IsChecked = true;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var sameContainer = ReferenceEquals(VisualTreeHelper.GetParent(toggle), sheet)
+                && ReferenceEquals(VisualTreeHelper.GetParent(toolbar), sheet);
+            var sheetChildren = sheet.Children.OfType<UIElement>().ToList();
+            var visibleSurface = TemplateBorder(toggle, "TabSurface");
+
+            var visibleState = (
+                Content: toggle.Content as string,
+                Visibility: toggle.Visibility,
+                HitTest: toggle.IsHitTestVisible,
+                Focusable: toggle.Focusable,
+                Alignment: toggle.HorizontalAlignment,
+                InsideToolbar: IsWithin(toggle, toolbar),
+                InsideSheet: IsWithin(toggle, sheet),
+                SameContainer: sameContainer,
+                SheetRow: Grid.GetRow(sheet),
+                MinWidth: toggle.MinWidth,
+                MinHeight: toggle.MinHeight,
+                TabCorners: visibleSurface.CornerRadius,
+                TabBorderThickness: visibleSurface.BorderThickness,
+                TabBackground: BrushColor(visibleSurface.Background),
+                ToolbarBackground: BrushColor(toolbar.Background),
+                ToolbarCorners: toolbar.CornerRadius,
+                ToolbarBorderThickness: toolbar.BorderThickness,
+                ChildCount: sheetChildren.Count,
+                ToggleIsFirst: sheetChildren.FirstOrDefault() == toggle);
+
+            var visibleLayout = new List<(
+                string Label,
+                bool NoGap,
+                bool Centered,
+                bool InsidePanel,
+                bool Hittable,
+                bool OverlapsProperty,
+                bool OverlapsPages,
+                bool ToolbarOverlapsProperty,
+                bool ToolbarOverlapsPages,
+                double Width,
+                double Height,
+                Rect ToggleBounds,
+                Rect PropertyBounds,
+                Rect PagesBounds,
+                double SheetHeight,
+                double ToolbarHeight,
+                double ActionHeight,
+                double PaletteHeight,
+                double AppHeight)>();
+            var hiddenLayout = new List<(
+                string Label,
+                Visibility ToolbarVisibility,
+                bool ToolbarHitTest,
+                Visibility ToggleVisibility,
+                bool Hittable,
+                bool Inside,
+                bool OverlapsProperty,
+                bool OverlapsPages,
+                bool OnlyVisibleSheetChild,
+                bool Centered,
+                bool AtBottom,
+                CornerRadius Corners,
+                Thickness BorderThickness,
+                string? Content)>();
+
+            var host = new Grid();
+            host.Children.Add(overlay);
+            foreach (var (label, width, height) in new[] { ("1024x600", 1024d, 600d), ("512x300", 512d, 300d) })
+            {
+                host.Width = width;
+                host.Height = height;
+                host.Measure(new Size(width, height));
+                host.Arrange(new Rect(0, 0, width, height));
+                host.UpdateLayout();
+                overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+                var panelRect = new Rect(0, 0, width, height);
+                var toggleBounds = BoundsWithin(toggle, overlay);
+                var toolbarBounds = BoundsWithin(toolbar, overlay);
+                var sheetBounds = BoundsWithin(sheet, overlay);
+                var propertyBounds = BoundsWithin(propertyPanel, overlay);
+                var pagesBounds = BoundsWithin(pagesPanel, overlay);
+
+                visibleLayout.Add((
+                    label,
+                    Math.Abs(toggleBounds.Bottom - toolbarBounds.Top) <= 0.5,
+                    Math.Abs((toggleBounds.Left + toggleBounds.Right) / 2 - (sheetBounds.Left + sheetBounds.Right) / 2) <= 0.5,
+                    panelRect.Contains(toggleBounds) && panelRect.Contains(toolbarBounds),
+                    IsHittable(overlay, toggle),
+                    Overlaps(toggleBounds, propertyBounds),
+                    Overlaps(toggleBounds, pagesBounds),
+                    Overlaps(toolbarBounds, propertyBounds),
+                    Overlaps(toolbarBounds, pagesBounds),
+                    toggle.ActualWidth,
+                    toggle.ActualHeight,
+                    toggleBounds,
+                    propertyBounds,
+                    pagesBounds,
+                    sheet.ActualHeight,
+                    toolbar.ActualHeight,
+                    actionCluster.ActualHeight,
+                    paletteScroll.ActualHeight,
+                    appScroll.ActualHeight));
+
+                Assert.True(service.HideEditMenu());
+                overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Collapsed);
+
+                var hiddenBounds = BoundsWithin(toggle, overlay);
+                var hiddenSurface = TemplateBorder(toggle, "TabSurface");
+                hiddenLayout.Add((
+                    label,
+                    toolbar.Visibility,
+                    toolbar.IsHitTestVisible,
+                    toggle.Visibility,
+                    IsHittable(overlay, toggle),
+                    panelRect.Contains(hiddenBounds),
+                    Overlaps(hiddenBounds, BoundsWithin(propertyPanel, overlay)),
+                    Overlaps(hiddenBounds, BoundsWithin(pagesPanel, overlay)),
+                    sheetChildren.Count(child => child.Visibility == Visibility.Visible) == 1,
+                    Math.Abs((hiddenBounds.Left + hiddenBounds.Right) / 2 - width / 2) <= 0.5,
+                    Math.Abs(hiddenBounds.Bottom - (height - 10)) <= 0.5,
+                    hiddenSurface.CornerRadius,
+                    hiddenSurface.BorderThickness,
+                    toggle.Content as string));
+
+                Assert.True(service.ShowEditMenu());
+                overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+                PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Visible && !toolbar.HasAnimatedProperties);
+            }
+
+            var restored = (
+                Toolbar: toolbar.Visibility,
+                ToolbarHitTest: toolbar.IsHitTestVisible,
+                Toggle: toggle.Visibility,
+                Content: toggle.Content as string);
+
+            return (visibleState, visibleLayout, hiddenLayout, restored);
+        });
+
+        Assert.Contains("Hide menu", result.visibleState.Content);
+        Assert.Equal(Visibility.Visible, result.visibleState.Visibility);
+        Assert.True(result.visibleState.HitTest);
+        Assert.Equal(HorizontalAlignment.Center, result.visibleState.Alignment);
+        Assert.False(result.visibleState.Focusable, "The menu tab must not pull keyboard focus.");
+        Assert.True(result.visibleState.InsideSheet);
+        Assert.False(result.visibleState.InsideToolbar, "The tab is the toolbar's attached sibling, not a child of its border.");
+        Assert.True(result.visibleState.SameContainer, "The tab and the toolbar body must share one visual container (one sheet).");
+        Assert.Equal(1, result.visibleState.SheetRow);
+        Assert.Equal(2, result.visibleState.ChildCount);
+        Assert.True(result.visibleState.ToggleIsFirst, "The tab must stack directly on top of the toolbar body.");
+        Assert.True(result.visibleState.MinWidth >= 44 && result.visibleState.MinHeight >= 44, "The menu tab must meet the 44 DIP touch-target minimum.");
+        Assert.Equal(new CornerRadius(10, 10, 0, 0), result.visibleState.TabCorners);
+        Assert.Equal(new Thickness(1, 1, 1, 0), result.visibleState.TabBorderThickness);
+        Assert.Equal(new CornerRadius(0, 0, 12, 12), result.visibleState.ToolbarCorners);
+        Assert.Equal(new Thickness(1, 0, 1, 1), result.visibleState.ToolbarBorderThickness);
+        Assert.Equal(Color.FromArgb(0xCC, 0x1E, 0x1E, 0x1E), result.visibleState.TabBackground);
+        Assert.Equal(result.visibleState.TabBackground, result.visibleState.ToolbarBackground);
+
+        Assert.Equal(2, result.visibleLayout.Count);
+        foreach (var measurement in result.visibleLayout)
+        {
+            Assert.True(measurement.NoGap, $"[{measurement.Label}] The menu tab must sit directly on the toolbar with no vertical gap.");
+            Assert.True(measurement.Centered, $"[{measurement.Label}] The menu tab must be horizontally centered on the sheet.");
+            Assert.True(measurement.InsidePanel, $"[{measurement.Label}] The tab and toolbar must stay inside the panel.");
+            Assert.True(measurement.Hittable, $"[{measurement.Label}] The menu tab must remain hit-testable.");
+
+            // At 1024x600 the 300 DIP property panel sits clear of the centred tab. At 512x300 the
+            // panel spans the whole panel width, so it necessarily covers the centred tab's column;
+            // the panel is stacked above the sheet and owns input there, and the tab is restored as
+            // soon as the editor closes. Only the roomy layout can require disjoint surfaces.
+            if (measurement.Label == "1024x600")
+            {
+                Assert.False(measurement.OverlapsProperty, $"[{measurement.Label}] The menu tab {measurement.ToggleBounds} must not overlap the property panel {measurement.PropertyBounds}. sheet={measurement.SheetHeight} toolbar={measurement.ToolbarHeight} actions={measurement.ActionHeight} palette={measurement.PaletteHeight} apps={measurement.AppHeight}");
+                Assert.False(measurement.OverlapsPages, $"[{measurement.Label}] The menu tab {measurement.ToggleBounds} must not overlap the Pages panel {measurement.PagesBounds}.");
+            }
+            Assert.False(measurement.ToolbarOverlapsProperty, $"[{measurement.Label}] The toolbar body must not overlap the property panel.");
+            Assert.False(measurement.ToolbarOverlapsPages, $"[{measurement.Label}] The toolbar body must not overlap the Pages panel.");
+            Assert.True(measurement.Width >= 44 && measurement.Height >= 44, $"[{measurement.Label}] The menu tab must be at least 44x44 DIP; was {measurement.Width}x{measurement.Height}.");
+        }
+
+        Assert.Equal(2, result.hiddenLayout.Count);
+        foreach (var measurement in result.hiddenLayout)
+        {
+            Assert.Equal(Visibility.Collapsed, measurement.ToolbarVisibility);
+            Assert.False(measurement.ToolbarHitTest, "The collapsed toolbar must not intercept touches.");
+            Assert.Equal(Visibility.Visible, measurement.ToggleVisibility);
+            Assert.True(measurement.Hittable, $"[{measurement.Label}] The menu tab must stay reachable by touch while the menu is hidden.");
+            Assert.True(measurement.OnlyVisibleSheetChild, $"[{measurement.Label}] The menu tab must be the only visible control in the sheet while the menu is hidden.");
+            Assert.True(measurement.Centered, $"[{measurement.Label}] The hidden menu tab must stay horizontally centered.");
+            Assert.True(measurement.AtBottom, $"[{measurement.Label}] The hidden menu tab must stay at the bottom of the panel.");
+            Assert.Contains("Edit menu", measurement.Content);
+            Assert.True(measurement.Inside, $"[{measurement.Label}] The menu tab must stay inside the panel.");
+            Assert.False(measurement.OverlapsProperty, $"[{measurement.Label}] The hidden menu tab must not overlap the property panel.");
+            Assert.False(measurement.OverlapsPages, $"[{measurement.Label}] The hidden menu tab must not overlap the Pages panel.");
+            Assert.Equal(new CornerRadius(10), measurement.Corners);
+            Assert.Equal(new Thickness(1), measurement.BorderThickness);
+        }
+
+        Assert.Equal(Visibility.Visible, result.restored.Toolbar);
+        Assert.True(result.restored.ToolbarHitTest);
+        Assert.Equal(Visibility.Visible, result.restored.Toggle);
+        Assert.Contains("Hide menu", result.restored.Content);
+    }
+
+    [Fact]
+    public async Task Overlay_Toolbar_UsesTheNewSpacingAndSharedEightDipButtonGap()
+    {
+        // User feedback: more breathing room in the menu and evenly separated actions/palette/apps.
+        // The shared button style owns the 8 DIP sibling gap (4 DIP per side), the toolbar body owns
+        // the 12/8 padding, and both rows after the action cluster share an 8 DIP top margin.
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            service.Enter(1024, 600);
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var toolbar = Assert.IsType<Border>(overlay.FindName("EditToolbar"));
+            var palette = Assert.IsType<ItemsControl>(overlay.FindName("PaletteItems"));
+            var paletteScroll = Assert.IsType<ScrollViewer>(overlay.FindName("PaletteScroll"));
+            var appRow = Assert.IsType<Grid>(overlay.FindName("AppPresetRow"));
+            var apps = Assert.IsType<ItemsControl>(overlay.FindName("AppPresetItems"));
+            var divider = Assert.IsType<Border>(overlay.FindName("ActionDivider"));
+
+            var style = Assert.IsType<Style>(overlay.Resources["EditToolbarButtonStyle"]);
+            var buttonMargin = GetSetterValue<Thickness>(style, FrameworkElement.MarginProperty);
+            var paletteButton = Assert.IsType<Button>(palette.ItemTemplate.LoadContent());
+            var appButton = Assert.IsType<Button>(apps.ItemTemplate.LoadContent());
+
+            var actionButtons = new FrameworkElement[]
+            {
+                Assert.IsType<Button>(overlay.FindName("UndoButton")),
+                Assert.IsType<Button>(overlay.FindName("RedoButton")),
+                Assert.IsType<ToggleButton>(overlay.FindName("SnapToggleButton")),
+                Assert.IsType<ToggleButton>(overlay.FindName("PagesToggleButton")),
+                Assert.IsType<Button>(overlay.FindName("DuplicateButton")),
+                Assert.IsType<Button>(overlay.FindName("RemoveButton")),
+                Assert.IsType<Button>(overlay.FindName("ExitEditModeButton")),
+            };
+
+            return (
+                Padding: toolbar.Padding,
+                ButtonMargin: buttonMargin,
+                ActionMargins: actionButtons.Select(button => button.Margin).ToArray(),
+                PaletteIsShared: ReferenceEquals(paletteButton.Style, style),
+                AppsIsShared: ReferenceEquals(appButton.Style, style),
+                PaletteMargin: paletteButton.Margin,
+                AppMargin: appButton.Margin,
+                PaletteTop: paletteScroll.Margin.Top,
+                AppsTop: appRow.Margin.Top,
+                DividerMargin: divider.Margin,
+                MinHeight: style.Setters.OfType<Setter>().Where(setter => setter.Property == FrameworkElement.MinHeightProperty).Select(setter => (double)setter.Value).FirstOrDefault());
+        });
+
+        Assert.Equal(new Thickness(12, 8, 12, 8), result.Padding);
+        Assert.NotNull(result.ButtonMargin);
+        Assert.Equal(new Thickness(4, 0, 4, 0), result.ButtonMargin!.Value);
+        Assert.All(result.ActionMargins, margin => Assert.Equal(new Thickness(4, 0, 4, 0), margin));
+        Assert.True(result.PaletteIsShared, "Palette buttons must use the shared toolbar button gap.");
+        Assert.True(result.AppsIsShared, "App buttons must use the shared toolbar button gap.");
+        Assert.Equal(new Thickness(4, 0, 4, 0), result.PaletteMargin);
+        Assert.Equal(new Thickness(4, 0, 4, 0), result.AppMargin);
+        Assert.Equal(8, result.PaletteTop);
+        Assert.Equal(8, result.AppsTop);
+        Assert.Equal(10, result.DividerMargin.Left);
+        Assert.Equal(10, result.DividerMargin.Right);
+        Assert.True(result.MinHeight >= 44, "The shared button gap must not shrink the touch target.");
+    }
+
+    private static Border TemplateBorder(Control control, string name)
+    {
+        control.ApplyTemplate();
+        return Assert.IsType<Border>(control.Template.FindName(name, control));
+    }
+
+    private static Color BrushColor(Brush? brush) => Assert.IsType<SolidColorBrush>(brush).Color;
+
+    private static T? GetSetterValue<T>(Style style, DependencyProperty property)
+        where T : struct
+    {
+        foreach (var setterBase in style.Setters)
+        {
+            if (setterBase is Setter { Property: var setProperty, Value: T value } && setProperty == property)
+            {
+                return value;
+            }
+        }
+
+        return null;
+    }
+
+    [Fact]
+    public async Task Overlay_MenuToggleHandlerFlipsTheToolbarStateBothWays()
+    {
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var toolbar = Assert.IsType<Border>(overlay.FindName("EditToolbar"));
+            var toggle = Assert.IsType<Button>(overlay.FindName("ToggleEditMenuButton"));
+
+            var host = new Grid { Width = 1024, Height = 600 };
+            host.Children.Add(overlay);
+            host.Measure(new Size(1024, 600));
+            host.Arrange(new Rect(0, 0, 1024, 600));
+            host.UpdateLayout();
+
+            service.Enter(1024, 600);
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            var initiallyVisible = service.IsEditMenuVisible
+                && toolbar.Visibility == Visibility.Visible
+                && (toggle.Content as string)?.Contains("Hide menu") == true;
+
+            toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            var collapsedImmediately = !service.IsEditMenuVisible;
+            var hidingAnimates = toolbar.HasAnimatedProperties;
+            PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Collapsed);
+            var hiddenAfterFirstClick = collapsedImmediately
+                && toolbar.Visibility == Visibility.Collapsed
+                && toggle.Visibility == Visibility.Visible
+                && (toggle.Content as string)?.Contains("Edit menu") == true;
+
+            toggle.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            var showingAnimates = toolbar.HasAnimatedProperties;
+            PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Visible && !toolbar.HasAnimatedProperties);
+            var visibleAfterSecondClick = service.IsEditMenuVisible
+                && toolbar.Visibility == Visibility.Visible
+                && toggle.Visibility == Visibility.Visible
+                && (toggle.Content as string)?.Contains("Hide menu") == true;
+
+            // Still a single edit session: Esc/shortcuts and drag/resize are unaffected by the toggle.
+            var stillEditing = service.IsEditMode;
+
+            return (initiallyVisible, hiddenAfterFirstClick, visibleAfterSecondClick, stillEditing, hidingAnimates, showingAnimates);
+        });
+
+        Assert.True(result.initiallyVisible, "The toggle must start in the visible (Hide menu) state.");
+        Assert.True(result.hiddenAfterFirstClick, "The first click must hide the toolbar and relabel the toggle.");
+        Assert.True(result.visibleAfterSecondClick, "The second click must restore the toolbar and relabel the toggle.");
+        Assert.True(result.hidingAnimates, "Hiding must transition instead of snapping.");
+        Assert.True(result.showingAnimates, "Showing must transition instead of snapping.");
+        Assert.True(result.stillEditing);
+    }
+
+    [Fact]
+    public async Task Overlay_MenuClose_AnimatesHeightAndOpacityThenCollapsesWithoutResidue()
+    {
+        // User-requested animation: hiding the edit menu must not snap. The body's height shrinks
+        // from its laid-out height to zero while it fades out, the attached pull-tab rides down with
+        // the shrinking sheet, and the completed state is the old collapsed state with no animated
+        // height/opacity left behind.
+        using var sta = new StaThread();
+
+        var state = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var host = new Grid { Width = 1024, Height = 600 };
+            host.Children.Add(overlay);
+            host.Measure(new Size(1024, 600));
+            host.Arrange(new Rect(0, 0, 1024, 600));
+            host.UpdateLayout();
+
+            service.Enter(1024, 600);
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            var toolbar = Assert.IsType<Border>(overlay.FindName("EditToolbar"));
+            var tab = Assert.IsType<Button>(overlay.FindName("ToggleEditMenuButton"));
+            var expandedHeight = toolbar.ActualHeight;
+            var expandedTabBottom = BoundsWithin(tab, overlay).Bottom;
+
+            Assert.True(service.HideEditMenu());
+
+            var animatedImmediately = toolbar.HasAnimatedProperties;
+            var visibilityWhileClosing = toolbar.Visibility;
+            var hitTestWhileClosing = toolbar.IsHitTestVisible;
+            var heightImmediately = toolbar.Height;
+            var opacityImmediately = toolbar.Opacity;
+
+            var samples = PumpMenuTransition(
+                host,
+                () => toolbar.Visibility == Visibility.Collapsed,
+                () => (
+                    toolbar.HasAnimatedProperties,
+                    toolbar.Height,
+                    toolbar.Opacity,
+                    BoundsWithin(tab, overlay).Bottom));
+
+            var tabBounds = BoundsWithin(tab, overlay);
+            return new
+            {
+                ExpandedHeight = expandedHeight,
+                ExpandedTabBottom = expandedTabBottom,
+                AnimatedImmediately = animatedImmediately,
+                VisibilityWhileClosing = visibilityWhileClosing,
+                HitTestWhileClosing = hitTestWhileClosing,
+                HeightImmediately = heightImmediately,
+                OpacityImmediately = opacityImmediately,
+                Samples = samples,
+                FinalVisibility = toolbar.Visibility,
+                FinalHeight = toolbar.Height,
+                FinalOpacity = toolbar.Opacity,
+                FinalAnimated = toolbar.HasAnimatedProperties,
+                FinalHitTest = toolbar.IsHitTestVisible,
+                TabVisibility = tab.Visibility,
+                TabBounds = tabBounds,
+            };
+        });
+
+        Assert.True(state.ExpandedHeight > 0, "The expanded toolbar must have a laid-out height before hiding.");
+        Assert.True(state.AnimatedImmediately, "Hiding must start a height/opacity animation instead of snapping.");
+        Assert.Equal(Visibility.Visible, state.VisibilityWhileClosing);
+        Assert.False(state.HitTestWhileClosing, "A collapsing toolbar must stop intercepting touches immediately.");
+        Assert.True(
+            Math.Abs(state.HeightImmediately - state.ExpandedHeight) <= 0.5,
+            $"The close animation must start at the expanded height {state.ExpandedHeight}; was {state.HeightImmediately}.");
+        Assert.Equal(1, state.OpacityImmediately);
+
+        // Mid-flight: both properties are between their endpoints, and the tab has moved down.
+        Assert.Contains(state.Samples, sample => sample.Animated && sample.Height > 0 && sample.Height < state.ExpandedHeight - 0.5);
+        Assert.Contains(state.Samples, sample => sample.Animated && sample.Opacity > 0 && sample.Opacity < 1);
+        Assert.Contains(
+            state.Samples,
+            sample => sample.TabBottom > state.ExpandedTabBottom + 0.5 && sample.TabBottom < state.TabBounds.Bottom - 0.5);
+
+        Assert.Equal(Visibility.Collapsed, state.FinalVisibility);
+        Assert.True(double.IsNaN(state.FinalHeight), $"The animated height must be cleared to auto (NaN); was {state.FinalHeight}.");
+        Assert.Equal(1, state.FinalOpacity);
+        Assert.False(state.FinalAnimated, "No animated property may be left behind after the collapse.");
+        Assert.False(state.FinalHitTest);
+        Assert.Equal(Visibility.Visible, state.TabVisibility);
+        Assert.Equal(512, (state.TabBounds.Left + state.TabBounds.Right) / 2, 1);
+        Assert.Equal(590, state.TabBounds.Bottom, 1);
+    }
+
+    [Fact]
+    public async Task Overlay_MenuOpen_AnimatesFromZeroToTheNaturalHeight()
+    {
+        // Opening grows the body from zero to its measured, width-constrained (wrapping) height and
+        // fades it in; completion restores auto layout so nothing stays pinned.
+        using var sta = new StaThread();
+
+        var state = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var host = new Grid { Width = 1024, Height = 600 };
+            host.Children.Add(overlay);
+            host.Measure(new Size(1024, 600));
+            host.Arrange(new Rect(0, 0, 1024, 600));
+            host.UpdateLayout();
+
+            service.Enter(1024, 600);
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            var toolbar = Assert.IsType<Border>(overlay.FindName("EditToolbar"));
+            var naturalHeight = toolbar.ActualHeight;
+
+            Assert.True(service.HideEditMenu());
+            PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Collapsed);
+
+            Assert.True(service.ShowEditMenu());
+            var animatedImmediately = toolbar.HasAnimatedProperties;
+            var visibilityWhileOpening = toolbar.Visibility;
+            var heightImmediately = toolbar.Height;
+            var opacityImmediately = toolbar.Opacity;
+
+            var samples = PumpMenuTransition(
+                host,
+                () => toolbar.Visibility == Visibility.Visible && !toolbar.HasAnimatedProperties,
+                () => (toolbar.HasAnimatedProperties, toolbar.Height, toolbar.Opacity, 0d));
+
+            host.UpdateLayout();
+            return new
+            {
+                NaturalHeight = naturalHeight,
+                AnimatedImmediately = animatedImmediately,
+                VisibilityWhileOpening = visibilityWhileOpening,
+                HeightImmediately = heightImmediately,
+                OpacityImmediately = opacityImmediately,
+                Samples = samples,
+                FinalVisibility = toolbar.Visibility,
+                FinalHeight = toolbar.Height,
+                FinalOpacity = toolbar.Opacity,
+                FinalAnimated = toolbar.HasAnimatedProperties,
+                FinalActualHeight = toolbar.ActualHeight,
+                FinalHitTest = toolbar.IsHitTestVisible,
+            };
+        });
+
+        Assert.True(state.NaturalHeight > 0, "The expanded toolbar must have a laid-out height to grow into.");
+        Assert.True(state.AnimatedImmediately, "Showing must start a height/opacity animation instead of appearing instantly.");
+        Assert.Equal(Visibility.Visible, state.VisibilityWhileOpening);
+        Assert.True(state.HeightImmediately <= 0.5, $"The open animation must start near zero height; was {state.HeightImmediately}.");
+        Assert.Equal(0, state.OpacityImmediately);
+
+        Assert.Contains(state.Samples, sample => sample.Animated && sample.Height > 0.5 && sample.Height < state.NaturalHeight - 0.5);
+        Assert.Contains(state.Samples, sample => sample.Animated && sample.Opacity > 0 && sample.Opacity < 1);
+
+        Assert.Equal(Visibility.Visible, state.FinalVisibility);
+        Assert.True(double.IsNaN(state.FinalHeight), $"The animated height must be cleared to auto (NaN); was {state.FinalHeight}.");
+        Assert.Equal(1, state.FinalOpacity);
+        Assert.False(state.FinalAnimated, "No animated property may be left behind after the expansion.");
+        Assert.True(state.FinalHitTest);
+        Assert.True(state.FinalActualHeight > 0);
+        Assert.Equal(state.NaturalHeight, state.FinalActualHeight, 1);
+    }
+
+    [Fact]
+    public async Task Overlay_RapidMenuToggles_ConvergeToTheLastRequestedState()
+    {
+        // Rapid taps must never leave a pinned height/opacity: a new transition replaces the running
+        // one and the final state always matches the last requested value.
+        using var sta = new StaThread();
+
+        var state = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var host = new Grid { Width = 1024, Height = 600 };
+            host.Children.Add(overlay);
+            host.Measure(new Size(1024, 600));
+            host.Arrange(new Rect(0, 0, 1024, 600));
+            host.UpdateLayout();
+
+            service.Enter(1024, 600);
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+
+            var toolbar = Assert.IsType<Border>(overlay.FindName("EditToolbar"));
+            var naturalHeight = toolbar.ActualHeight;
+
+            // Hide then show immediately: the close is overridden by the open.
+            Assert.True(service.HideEditMenu());
+            Assert.True(service.ShowEditMenu());
+            PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Visible && !toolbar.HasAnimatedProperties);
+            host.UpdateLayout();
+            var reopened = (
+                toolbar.Visibility,
+                toolbar.Height,
+                toolbar.Opacity,
+                toolbar.HasAnimatedProperties,
+                toolbar.IsHitTestVisible,
+                toolbar.ActualHeight);
+
+            // Show then hide immediately: the open is overridden by the close.
+            Assert.True(service.HideEditMenu());
+            PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Collapsed);
+            Assert.True(service.ShowEditMenu());
+            Assert.True(service.HideEditMenu());
+            PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Collapsed && !toolbar.HasAnimatedProperties);
+            host.UpdateLayout();
+            var rehidden = (
+                toolbar.Visibility,
+                toolbar.Height,
+                toolbar.Opacity,
+                toolbar.HasAnimatedProperties,
+                toolbar.IsHitTestVisible);
+
+            // A third tap while the replacement open animation is still running still lands hidden.
+            Assert.True(service.ShowEditMenu());
+            Assert.True(service.HideEditMenu());
+            PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Collapsed && !toolbar.HasAnimatedProperties);
+
+            return new
+            {
+                NaturalHeight = naturalHeight,
+                Reopened = reopened,
+                Rehidden = rehidden,
+                FinalVisibility = toolbar.Visibility,
+                FinalHeight = toolbar.Height,
+                FinalOpacity = toolbar.Opacity,
+                FinalAnimated = toolbar.HasAnimatedProperties,
+                FinalHitTest = toolbar.IsHitTestVisible,
+            };
+        });
+
+        Assert.True(state.NaturalHeight > 0);
+        Assert.Equal(Visibility.Visible, state.Reopened.Visibility);
+        Assert.True(double.IsNaN(state.Reopened.Height));
+        Assert.Equal(1, state.Reopened.Opacity);
+        Assert.False(state.Reopened.HasAnimatedProperties);
+        Assert.True(state.Reopened.IsHitTestVisible);
+        Assert.Equal(state.NaturalHeight, state.Reopened.ActualHeight, 1);
+
+        Assert.Equal(Visibility.Collapsed, state.Rehidden.Visibility);
+        Assert.True(double.IsNaN(state.Rehidden.Height));
+        Assert.Equal(1, state.Rehidden.Opacity);
+        Assert.False(state.Rehidden.HasAnimatedProperties);
+        Assert.False(state.Rehidden.IsHitTestVisible);
+
+        Assert.Equal(Visibility.Collapsed, state.FinalVisibility);
+        Assert.True(double.IsNaN(state.FinalHeight));
+        Assert.Equal(1, state.FinalOpacity);
+        Assert.False(state.FinalAnimated);
+        Assert.False(state.FinalHitTest);
+    }
+
+    [Fact]
+    public async Task Overlay_MenuStartsAndRebuildsWithoutAnimation()
+    {
+        // Construction, a page rebuild (new service instance), and session entry/exit all apply the
+        // expanded state instantly; only a user toggle animates. Replacing the data context must also
+        // detach the old service so a stale instance cannot drive this overlay.
+        using var sta = new StaThread();
+
+        var state = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var toolbar = Assert.IsType<Border>(overlay.FindName("EditToolbar"));
+            var constructed = (
+                toolbar.Visibility,
+                toolbar.Height,
+                toolbar.Opacity,
+                toolbar.HasAnimatedProperties);
+
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+
+            var host = new Grid { Width = 1024, Height = 600 };
+            host.Children.Add(overlay);
+            host.Measure(new Size(1024, 600));
+            host.Arrange(new Rect(0, 0, 1024, 600));
+            host.UpdateLayout();
+
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            var afterContext = (toolbar.Visibility, toolbar.HasAnimatedProperties);
+
+            service.Enter(1024, 600);
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            var afterEnter = (toolbar.Visibility, toolbar.HasAnimatedProperties, toolbar.Height);
+
+            // A page rebuild swaps in a fresh service with the menu expanded: no transition, and the
+            // old instance stops driving the overlay. Set up the old instance as hidden first.
+            var replacement = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            replacement.Enter(1024, 600);
+            overlay.DataContext = replacement;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            Assert.True(replacement.HideEditMenu());
+            PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Collapsed);
+
+            var rebuilt = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = rebuilt;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            var afterRebuild = (
+                toolbar.Visibility,
+                toolbar.Height,
+                toolbar.Opacity,
+                toolbar.HasAnimatedProperties);
+
+            // The replaced service is still in edit mode and hidden; flipping it must not touch this
+            // overlay (its handler was detached on the data-context change).
+            Assert.True(replacement.ShowEditMenu());
+            Assert.True(replacement.HideEditMenu());
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            var afterStaleToggle = (toolbar.Visibility, toolbar.HasAnimatedProperties);
+
+            // Exit/edit re-entry start expanded and instant: hide, exit (the service resets the menu
+            // to visible), and re-enter without any animation.
+            var current = (EditModeService)overlay.DataContext;
+            current.Enter(1024, 600);
+            Assert.True(current.HideEditMenu());
+            PumpMenuTransition(host, () => toolbar.Visibility == Visibility.Collapsed);
+
+            current.ExitAsync().GetAwaiter().GetResult();
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            var afterExit = (
+                toolbar.Visibility,
+                toolbar.Height,
+                toolbar.Opacity,
+                toolbar.HasAnimatedProperties);
+
+            current.Enter(1024, 600);
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            host.UpdateLayout();
+            var afterReenter = (toolbar.Visibility, toolbar.HasAnimatedProperties);
+
+            return new
+            {
+                Constructed = constructed,
+                AfterContext = afterContext,
+                AfterEnter = afterEnter,
+                AfterRebuild = afterRebuild,
+                AfterStaleToggle = afterStaleToggle,
+                AfterExit = afterExit,
+                AfterReenter = afterReenter,
+            };
+        });
+
+        Assert.Equal(Visibility.Visible, state.Constructed.Visibility);
+        Assert.False(state.Constructed.HasAnimatedProperties, "Construction must not animate the menu.");
+        Assert.Equal(1, state.Constructed.Opacity);
+
+        Assert.Equal(Visibility.Visible, state.AfterContext.Visibility);
+        Assert.False(state.AfterContext.HasAnimatedProperties, "Binding the initial service must not animate the menu.");
+
+        Assert.Equal(Visibility.Visible, state.AfterEnter.Visibility);
+        Assert.False(state.AfterEnter.HasAnimatedProperties, "Entering edit mode must not animate the menu.");
+        Assert.True(double.IsNaN(state.AfterEnter.Height));
+
+        Assert.Equal(Visibility.Visible, state.AfterRebuild.Visibility);
+        Assert.True(double.IsNaN(state.AfterRebuild.Height));
+        Assert.Equal(1, state.AfterRebuild.Opacity);
+        Assert.False(state.AfterRebuild.HasAnimatedProperties, "A data-context replacement must apply the expanded state instantly.");
+
+        Assert.Equal(Visibility.Visible, state.AfterStaleToggle.Visibility);
+        Assert.False(state.AfterStaleToggle.HasAnimatedProperties, "The replaced service handler must be detached.");
+
+        Assert.Equal(Visibility.Visible, state.AfterExit.Visibility);
+        Assert.True(double.IsNaN(state.AfterExit.Height));
+        Assert.Equal(1, state.AfterExit.Opacity);
+        Assert.False(state.AfterExit.HasAnimatedProperties, "Exiting edit mode must show the menu instantly, not animate.");
+
+        Assert.Equal(Visibility.Visible, state.AfterReenter.Visibility);
+        Assert.False(state.AfterReenter.HasAnimatedProperties, "Re-entering edit mode must not animate the menu.");
     }
 
     [Fact]
@@ -1098,6 +1898,234 @@ public sealed class EditOverlayTests
         Assert.True(
             narrow.PaletteScrollableWidth > 0,
             $"[512x300] The palette must scroll horizontally when its content exceeds the panel width (extent={narrow.PaletteExtentWidth}, viewport={narrow.PaletteViewportWidth}).");
+    }
+
+    [Fact]
+    public async Task Overlay_BothToolbarRowsStayInsideThePanelAndScrollToTheirLastItem()
+    {
+        // Regression (user-reported): the widget palette and the Apps strip were changed to a hidden
+        // horizontal scrollbar. The row buttons handle touch, which blocks the built-in PanningMode
+        // panning (see TouchPan), so with no bar the overflowed buttons were unreachable. The bar is
+        // Auto again: it is only materialised when the strip overflows, and dragging it (or the
+        // programmatic equivalent exercised here) reaches the last item at both panel sizes. The rows
+        // must also keep a finite viewport so nothing is laid out or rendered outside the panel.
+        using var sta = new StaThread();
+
+        var result = await sta.InvokeAsync(() =>
+        {
+            var overlay = new EditOverlay();
+            var config = ConfigWithTwoWidgets();
+            var registry = WidgetRegistry.CreateDefault();
+            var page = PageViewModel.CreateForActivePage(config, registry);
+            var service = new EditModeService(config, page, new RecordingConfigStore(), factory: registry, palette: registry);
+            overlay.DataContext = service;
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            service.Enter(1024, 600);
+            overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+            var sheet = Assert.IsType<StackPanel>(overlay.FindName("EditSheet"));
+            var toolbar = Assert.IsType<Border>(overlay.FindName("EditToolbar"));
+            var tab = Assert.IsType<Button>(overlay.FindName("ToggleEditMenuButton"));
+            var palette = Assert.IsType<ScrollViewer>(overlay.FindName("PaletteScroll"));
+            var apps = Assert.IsType<ScrollViewer>(overlay.FindName("AppPresetScroll"));
+
+            var rows = new List<(
+                string Row,
+                string Label,
+                double PanelWidth,
+                double Viewport,
+                double Extent,
+                double Scrollable,
+                double OffsetAtEnd,
+                ScrollBarVisibility Horizontal,
+                ScrollBarVisibility Vertical,
+                PanningMode Panning,
+                Visibility ComputedBar,
+                bool FitsPanel,
+                bool Overflows,
+                Rect LastBounds,
+                bool LastFullyVisible,
+                bool LastHittable,
+                Rect ScrollBounds,
+                Rect ToolbarBounds,
+                Rect SheetBounds,
+                Rect TabBounds,
+                double TabCenterX)>();
+
+            var host = new Grid();
+            host.Children.Add(overlay);
+
+            foreach (var (label, width, height) in new[] { ("1024x600", 1024d, 600d), ("512x300", 512d, 300d) })
+            {
+                host.Width = width;
+                host.Height = height;
+                host.Measure(new Size(width, height));
+                host.Arrange(new Rect(0, 0, width, height));
+                host.UpdateLayout();
+                overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+                var panelRect = new Rect(0, 0, width, height);
+                var toolbarBounds = BoundsWithin(toolbar, overlay);
+                var sheetBounds = BoundsWithin(sheet, overlay);
+                var tabBounds = BoundsWithin(tab, overlay);
+
+                foreach (var (row, scroll) in new[] { ("Palette", palette), ("Apps", apps) })
+                {
+                    scroll.ScrollToHorizontalOffset(0);
+                    scroll.UpdateLayout();
+
+                    var extent = scroll.ExtentWidth;
+                    var viewport = scroll.ViewportWidth;
+                    var scrollable = scroll.ScrollableWidth;
+                    var computedBar = scroll.ComputedHorizontalScrollBarVisibility;
+
+                    // Scroll exactly as far as the row allows, then check the final item is inside
+                    // the viewport (i.e. the far edge is reachable, not merely present).
+                    scroll.ScrollToHorizontalOffset(scrollable);
+                    scroll.UpdateLayout();
+                    overlay.Dispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+
+                    var items = Assert.IsType<ItemsControl>(scroll.Content);
+                    var lastContainer = Assert.IsAssignableFrom<FrameworkElement>(
+                        items.ItemContainerGenerator.ContainerFromIndex(items.Items.Count - 1));
+                    var lastBounds = BoundsWithin(lastContainer, scroll);
+
+                    rows.Add((
+                        row,
+                        label,
+                        width,
+                        viewport,
+                        extent,
+                        scrollable,
+                        scroll.HorizontalOffset,
+                        scroll.HorizontalScrollBarVisibility,
+                        scroll.VerticalScrollBarVisibility,
+                        scroll.PanningMode,
+                        computedBar,
+                        BoundsWithin(scroll, overlay).Right <= width + 0.5
+                            && BoundsWithin(scroll, overlay).Left >= -0.5,
+                        extent > viewport + 0.5,
+                        lastBounds,
+                        lastBounds.Left >= -0.5 && lastBounds.Right <= viewport + 0.5,
+                        IsHittable(overlay, lastContainer),
+                        BoundsWithin(scroll, overlay),
+                        toolbarBounds,
+                        sheetBounds,
+                        tabBounds,
+                        (tabBounds.Left + tabBounds.Right) / 2));
+
+                    scroll.ScrollToHorizontalOffset(0);
+                    scroll.UpdateLayout();
+                }
+            }
+
+            return rows;
+        });
+
+        Assert.Equal(4, result.Count);
+
+        foreach (var row in result)
+        {
+            var tag = $"[{row.Label} {row.Row}]";
+            Assert.Equal(ScrollBarVisibility.Auto, row.Horizontal);
+            Assert.Equal(ScrollBarVisibility.Disabled, row.Vertical);
+            Assert.Equal(PanningMode.HorizontalOnly, row.Panning);
+            Assert.True(row.Viewport > 0, $"{tag} must report a real viewport.");
+            Assert.True(
+                row.Viewport <= row.PanelWidth,
+                $"{tag} viewport {row.Viewport} must not exceed the {row.PanelWidth} DIP panel.");
+            Assert.True(row.FitsPanel, $"{tag} row bounds {row.ScrollBounds} must stay inside the panel.");
+            Assert.True(
+                row.Extent > row.Viewport || row.Scrollable == 0,
+                $"{tag} an overflowing row must scroll (extent={row.Extent}, viewport={row.Viewport}).");
+
+            if (row.Overflows)
+            {
+                Assert.True(row.Scrollable > 0, $"{tag} must have a scrollable range.");
+                Assert.Equal(Visibility.Visible, row.ComputedBar);
+                Assert.True(
+                    Math.Abs(row.OffsetAtEnd - row.Scrollable) <= 0.5,
+                    $"{tag} must reach its full scrollable width (offset={row.OffsetAtEnd}, scrollable={row.Scrollable}).");
+            }
+            else
+            {
+                Assert.Equal(Visibility.Collapsed, row.ComputedBar);
+            }
+
+            Assert.True(
+                row.LastFullyVisible,
+                $"{tag} the last item {row.LastBounds} must be fully inside the viewport {row.Viewport} after scrolling.");
+            Assert.True(row.LastHittable, $"{tag} the last item must be touch-reachable after scrolling.");
+
+            // Nothing may render outside the panel: the sheet and its toolbar body keep their right
+            // edge within the panel width at both sizes.
+            Assert.True(row.SheetBounds.Right <= row.PanelWidth + 0.5, $"{tag} sheet {row.SheetBounds} must not exceed the panel width.");
+            Assert.True(row.SheetBounds.Left >= -0.5, $"{tag} sheet {row.SheetBounds} must not start outside the panel.");
+            Assert.True(row.ToolbarBounds.Right <= row.PanelWidth + 0.5, $"{tag} toolbar {row.ToolbarBounds} must not exceed the panel width.");
+
+            // The attached pull-tab stays centred on the panel and touch-sized.
+            Assert.True(
+                Math.Abs(row.TabCenterX - row.PanelWidth / 2) <= 0.5,
+                $"{tag} the pull-tab centre {row.TabCenterX} must match the panel centre {row.PanelWidth / 2}.");
+            Assert.True(row.TabBounds.Width >= 44 && row.TabBounds.Height >= 44, $"{tag} the pull-tab must be at least 44x44 DIP.");
+        }
+
+        // At 512x300 (200% scaling) both strips are genuinely wider than their viewports, so both
+        // must scroll, not clip. At 1024x600 the palette fits but the Apps strip does not.
+        foreach (var row in result.Where(row => row.Label == "512x300"))
+        {
+            Assert.True(row.Overflows, $"[512x300 {row.Row}] must overflow and scroll (extent={row.Extent}, viewport={row.Viewport}).");
+        }
+
+        var appsAtFullSize = result.Single(row => row.Label == "1024x600" && row.Row == "Apps");
+        Assert.True(
+            appsAtFullSize.Overflows,
+            $"[1024x600 Apps] must overflow and scroll (extent={appsAtFullSize.Extent}, viewport={appsAtFullSize.Viewport}).");
+    }
+
+    /// <summary>
+    /// Pumps the real dispatcher (layout plus animation clocks) until the menu transition settles.
+    /// The optional sampler records the live animated height/opacity and the pull-tab position on
+    /// every tick; the guard timer only prevents a hang and is never used as a timing assertion.
+    /// </summary>
+    private static List<(bool Animated, double Height, double Opacity, double TabBottom)> PumpMenuTransition(
+        Grid host,
+        Func<bool> isSettled,
+        Func<(bool Animated, double Height, double Opacity, double TabBottom)>? sample = null)
+    {
+        var observed = new List<(bool Animated, double Height, double Opacity, double TabBottom)>();
+        var frame = new DispatcherFrame();
+        var poll = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(10),
+            DispatcherPriority.Render,
+            (_, _) =>
+            {
+                host.UpdateLayout();
+                if (sample is not null)
+                {
+                    observed.Add(sample());
+                }
+
+                if (isSettled())
+                {
+                    frame.Continue = false;
+                }
+            },
+            Dispatcher.CurrentDispatcher);
+        var guard = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(MenuTransitionTimeoutMilliseconds),
+            DispatcherPriority.Background,
+            (_, _) => frame.Continue = false,
+            Dispatcher.CurrentDispatcher);
+
+        poll.Start();
+        guard.Start();
+        Dispatcher.PushFrame(frame);
+        poll.Stop();
+        guard.Stop();
+
+        return observed;
     }
 
     private static Rect BoundsWithin(FrameworkElement element, Visual ancestor) =>
